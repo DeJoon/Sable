@@ -39,7 +39,6 @@ export const createPmpCommands = (ctx: CommandContext): Partial<CommandRecord> =
           id: profileId,
           displayname: name || '',
           avatar_url,
-          trigger: { prefix: [] },
         };
         await addOrUpdatePerMessageProfile(mx, pmp)
           .then(() => {

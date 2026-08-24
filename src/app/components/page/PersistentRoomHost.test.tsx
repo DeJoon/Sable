@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import { render, screen } from '@testing-library/react';
 import { Provider, createStore } from 'jotai';
-import { MemoryRouter, useLocation } from 'react-router-dom';
+import { MemoryRouter, useLocation } from 'react-router';
 import { describe, expect, it, vi } from 'vitest';
 import type { Room as MatrixRoom } from '$types/matrix-sdk';
 import { getHomeForumPath, getSpaceForumPath } from '$pages/pathUtils';

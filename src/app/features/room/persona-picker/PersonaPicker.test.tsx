@@ -135,8 +135,8 @@ function deferred<T>() {
 }
 
 const profiles: PerMessageProfileMsc4461[] = [
-  { id: 'first', displayname: 'First', trigger: { prefix: [] } },
-  { id: 'second', displayname: 'Second', trigger: { prefix: [] } },
+  { id: 'first', displayname: 'First' },
+  { id: 'second', displayname: 'Second' },
 ];
 
 type TestMatrixClient = MatrixClient & { emitAccountData: (type: string) => void };
@@ -198,12 +198,12 @@ describe('PersonaPicker async flows', () => {
     view.rerender({ mx: secondClient });
 
     await act(async () => {
-      secondFetch.resolve([{ id: 'new', displayname: 'New', trigger: { prefix: [] } }]);
+      secondFetch.resolve([{ id: 'new', displayname: 'New' }]);
       await secondFetch.promise;
     });
     await waitFor(() => expect(view.result.current.profiles?.[0]?.id).toBe('new'));
     await act(async () => {
-      firstFetch.resolve([{ id: 'old', displayname: 'Old', trigger: { prefix: [] } }]);
+      firstFetch.resolve([{ id: 'old', displayname: 'Old' }]);
       await firstFetch.promise;
     });
 
@@ -236,6 +236,13 @@ describe('PersonaPicker async flows', () => {
     fetch.resolve(profiles);
     await Promise.resolve();
     expect(screen.queryByText('First')).not.toBeInTheDocument();
+  });
+
+  it('renders while profiles are loading', async () => {
+    mocked.getAll.mockReturnValue(new Promise<PerMessageProfileMsc4461[]>(() => {}));
+    renderPicker();
+
+    await waitFor(() => expect(mocked.getAll).toHaveBeenCalled());
   });
 
   it('commits an independent global sync when the room sync is still pending', async () => {

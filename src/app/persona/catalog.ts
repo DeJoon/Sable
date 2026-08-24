@@ -4,11 +4,13 @@ import { CustomAccountDataEvent } from '$types/matrix/accountData';
 import type { ColorSet } from '$hooks/useUserProfile';
 import { type PronounSet } from '$utils/pronouns';
 import { createKeyedQueue } from '$utils/keyedQueue';
+import type { MATRIX_UNSTABLE_PROFILE_PKIT_IMPORT_PROPERTY_NAME } from '$unstable/prefixes';
 import {
   MATRIX_SABLE_UNSTABLE_MSC4461_TRIGGER_CIRCUMFIX_PROPERTY_NAME,
   MATRIX_SABLE_UNSTABLE_MSC4461_TRIGGER_SUFFIX_PROPERTY_NAME,
   MATRIX_UNSTABLE_COLORS,
   MATRIX_UNSTABLE_MSC4461_ACCOUNT_PER_MESSAGE_PROFILES_PROPERTY_NAME,
+  MATRIX_UNSTABLE_MSC4461_ACCOUNT_PER_MESSAGE_PROFILES_PROPERTY_NAME_V2,
   MATRIX_UNSTABLE_PROFILE_PRONOUNS_PROPERTY_NAME,
 } from '$unstable/prefixes';
 import type {
@@ -16,6 +18,7 @@ import type {
   PerMessageProfileMsc4461,
   ProfileTrigger,
   ResolvedPersonaSelection,
+  PkitImport,
 } from './index';
 
 const ACCOUNT_DATA_PREFIX = CustomAccountDataEvent.SablePerProfileMessageProfiles;
@@ -32,16 +35,38 @@ type LegacyProfile = {
 
 type LegacyProfileIndex = { profileIds: string[]; compat: AccountDataCompatVersion };
 
+export type ProfileV2Trigger = {
+  prefix: string[];
+  [MATRIX_SABLE_UNSTABLE_MSC4461_TRIGGER_SUFFIX_PROPERTY_NAME]?: string[];
+  [MATRIX_SABLE_UNSTABLE_MSC4461_TRIGGER_CIRCUMFIX_PROPERTY_NAME]?: {
+    prefix: string;
+    suffix: string;
+  }[];
+};
+
+export type PersonaV2 = {
+  id: string;
+  displayname: string;
+  avatar_url?: string;
+  [MATRIX_UNSTABLE_PROFILE_PRONOUNS_PROPERTY_NAME]?: PronounSet[];
+  [MATRIX_UNSTABLE_COLORS]?: ColorSet;
+  [MATRIX_UNSTABLE_PROFILE_PKIT_IMPORT_PROPERTY_NAME]?: PkitImport;
+  trigger: ProfileV2Trigger;
+  compat?: AccountDataCompatVersion;
+};
+
 export type PerMessageProfileIndexMsc4461 = {
   type: 'm.per_message_profiles';
   content: { profiles: PerMessageProfileMsc4461[] };
 };
 
-export type PersonaCatalogContent = { profiles: Persona[] };
-type InvalidPersonaCatalogContent = {
+export type PersonaCatalogContentV2 = { profiles: PersonaV2[] };
+type InvalidPersonaCatalogContentV2 = {
   type: 'm.per_message_profiles';
-  content: PersonaCatalogContent;
+  content: PersonaCatalogContentV2;
 };
+
+export type PersonaCatalogContent = { profiles: Persona[] };
 
 type ProfileAssociation = { profileId: string; validUntil?: number };
 type RoomAssociationWrapper = {
@@ -87,6 +112,7 @@ type ProxyAssociationWrapper = {
 export function isPersonaAccountDataEvent(eventType: string) {
   return (
     eventType === MATRIX_UNSTABLE_MSC4461_ACCOUNT_PER_MESSAGE_PROFILES_PROPERTY_NAME ||
+    eventType === MATRIX_UNSTABLE_MSC4461_ACCOUNT_PER_MESSAGE_PROFILES_PROPERTY_NAME_V2 ||
     eventType.startsWith(`${ACCOUNT_DATA_PREFIX}.`)
   );
 }
@@ -95,7 +121,40 @@ function accountData(mx: MatrixClient, eventType: string) {
   return mx.getAccountData(eventType as Parameters<typeof mx.getAccountData>[0]);
 }
 
-function isCircumfix(value: unknown): value is { prefix: string; suffix: string } {
+function isTrigger(value: unknown): value is ProfileTrigger {
+  let trigger = value as {
+    prefix?: unknown;
+    suffix?: unknown;
+    keep_trigger?: unknown;
+  };
+
+  return (
+    typeof trigger === 'object' &&
+    trigger !== null &&
+    !Array.isArray(trigger) &&
+    (trigger.prefix === undefined || typeof trigger.prefix === 'string') &&
+    (trigger.suffix === undefined || typeof trigger.suffix === 'string') &&
+    (trigger.keep_trigger === undefined || typeof trigger.keep_trigger == 'boolean')
+  );
+}
+
+function isPersona(value: unknown): value is Persona {
+  const persona = value as {
+    id?: unknown;
+    displayname?: unknown;
+    triggers?: unknown;
+  };
+  const triggers = persona.triggers;
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    typeof persona.id === 'string' &&
+    typeof persona.displayname === 'string' &&
+    (triggers === undefined || (Array.isArray(triggers) && triggers.every(isTrigger)))
+  );
+}
+
+function isCircumfixV2(value: unknown): value is { prefix: string; suffix: string } {
   return (
     typeof value === 'object' &&
     value !== null &&
@@ -104,7 +163,7 @@ function isCircumfix(value: unknown): value is { prefix: string; suffix: string 
   );
 }
 
-function isPersona(value: unknown): value is Persona {
+function isPersonaV2(value: unknown): value is PersonaV2 {
   const persona = value as {
     id?: unknown;
     displayname?: unknown;
@@ -127,8 +186,33 @@ function isPersona(value: unknown): value is Persona {
         ))) &&
     (trigger[MATRIX_SABLE_UNSTABLE_MSC4461_TRIGGER_CIRCUMFIX_PROPERTY_NAME] === undefined ||
       (Array.isArray(trigger[MATRIX_SABLE_UNSTABLE_MSC4461_TRIGGER_CIRCUMFIX_PROPERTY_NAME]) &&
-        trigger[MATRIX_SABLE_UNSTABLE_MSC4461_TRIGGER_CIRCUMFIX_PROPERTY_NAME].every(isCircumfix)))
+        trigger[MATRIX_SABLE_UNSTABLE_MSC4461_TRIGGER_CIRCUMFIX_PROPERTY_NAME].every(
+          isCircumfixV2
+        )))
   );
+}
+
+function isCatalogContentV2(value: unknown): value is PersonaCatalogContentV2 {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    'profiles' in value &&
+    Array.isArray(value.profiles)
+  );
+}
+
+function readCatalogV2(mx: MatrixClient): PersonaCatalogContentV2 | undefined {
+  const content = accountData(
+    mx,
+    MATRIX_UNSTABLE_MSC4461_ACCOUNT_PER_MESSAGE_PROFILES_PROPERTY_NAME_V2
+  )?.getContent();
+  if (isCatalogContentV2(content)) return { profiles: content.profiles.filter(isPersonaV2) };
+
+  const nested = content as InvalidPersonaCatalogContentV2 | undefined;
+  if (isCatalogContentV2(nested?.content)) {
+    return { profiles: nested.content.profiles.filter(isPersona) };
+  }
+  return undefined;
 }
 
 function isCatalogContent(value: unknown): value is PersonaCatalogContent {
@@ -140,21 +224,12 @@ function isCatalogContent(value: unknown): value is PersonaCatalogContent {
   );
 }
 
-function readCatalog(mx: MatrixClient): { profiles: Persona[]; nested: boolean } | undefined {
+function readCatalog(mx: MatrixClient): { profiles: Persona[] } | undefined {
   const content = accountData(
     mx,
     MATRIX_UNSTABLE_MSC4461_ACCOUNT_PER_MESSAGE_PROFILES_PROPERTY_NAME
   )?.getContent();
-  if (isCatalogContent(content))
-    return { profiles: content.profiles.filter(isPersona), nested: false };
-
-  const nested = content as InvalidPersonaCatalogContent | undefined;
-  if (isCatalogContent(nested?.content)) {
-    return {
-      profiles: nested.content.profiles.filter(isPersona),
-      nested: nested.type === 'm.per_message_profiles',
-    };
-  }
+  if (isCatalogContent(content)) return { profiles: content.profiles.filter(isPersona) };
   return undefined;
 }
 
@@ -231,12 +306,32 @@ export function parsePerMessageProfileProxyAssociation(
   };
 }
 
-export function convertPmpToMsc4461(mx: MatrixClient, profile: LegacyProfile): Persona {
-  const trigger: ProfileTrigger = {
-    prefix: [],
-    [MATRIX_SABLE_UNSTABLE_MSC4461_TRIGGER_SUFFIX_PROPERTY_NAME]: [],
-    [MATRIX_SABLE_UNSTABLE_MSC4461_TRIGGER_CIRCUMFIX_PROPERTY_NAME]: [],
+export function convertMsc4461V2ToV3(profile: PersonaV2): Persona {
+  let { trigger: triggerV2, ...profile_other } = profile;
+  let triggerV3: ProfileTrigger[] = [];
+
+  for (let { prefix, suffix } of triggerV2[
+    MATRIX_SABLE_UNSTABLE_MSC4461_TRIGGER_CIRCUMFIX_PROPERTY_NAME
+  ] ?? []) {
+    triggerV3.push({ prefix, suffix });
+  }
+
+  for (let prefix of triggerV2.prefix ?? []) {
+    triggerV3.push({ prefix });
+  }
+
+  for (let suffix of triggerV2[MATRIX_SABLE_UNSTABLE_MSC4461_TRIGGER_SUFFIX_PROPERTY_NAME] ?? []) {
+    triggerV3.push({ suffix });
+  }
+
+  return {
+    ...profile_other,
+    triggers: triggerV3,
   };
+}
+
+export function convertPmpToMsc4461(mx: MatrixClient, profile: LegacyProfile): Persona {
+  const triggers: ProfileTrigger[] = [];
   proxyAssociationMap(
     accountData(mx, `${ACCOUNT_DATA_PREFIX}.proxyassociation`)?.getContent() as
       | ProxyAssociationWrapper
@@ -247,14 +342,9 @@ export function convertPmpToMsc4461(mx: MatrixClient, profile: LegacyProfile): P
     .forEach(([key, association]) => {
       const migrated = migratePmpProxyAssociation(key, association);
       if (!migrated) return;
-      if (migrated.prefix && !migrated.suffix) trigger.prefix.push(migrated.prefix);
-      else if (!migrated.prefix && migrated.suffix)
-        trigger[MATRIX_SABLE_UNSTABLE_MSC4461_TRIGGER_SUFFIX_PROPERTY_NAME]!.push(migrated.suffix);
-      else if (migrated.prefix && migrated.suffix)
-        trigger[MATRIX_SABLE_UNSTABLE_MSC4461_TRIGGER_CIRCUMFIX_PROPERTY_NAME]!.push({
-          prefix: migrated.prefix,
-          suffix: migrated.suffix,
-        });
+      if (migrated.prefix || migrated.suffix) {
+        triggers.push({ prefix: migrated.prefix, suffix: migrated.suffix });
+      }
     });
   const persona: Persona = {
     id: profile.id,
@@ -262,7 +352,7 @@ export function convertPmpToMsc4461(mx: MatrixClient, profile: LegacyProfile): P
     avatar_url: profile.avatarUrl,
     [MATRIX_UNSTABLE_PROFILE_PRONOUNS_PROPERTY_NAME]: profile.pronouns,
     [MATRIX_UNSTABLE_COLORS]: profile.colors,
-    trigger,
+    triggers,
   };
   if (!profile.avatarUrl) delete persona.avatar_url;
   if (!profile.pronouns?.length) delete persona[MATRIX_UNSTABLE_PROFILE_PRONOUNS_PROPERTY_NAME];
@@ -276,8 +366,16 @@ export class ProfileCatalog {
   private async load(migrate: boolean): Promise<Persona[]> {
     const catalog = readCatalog(this.mx);
     if (catalog) {
-      if (migrate && catalog.nested) await saveCatalog(this.mx, catalog.profiles);
       return catalog.profiles;
+    }
+
+    const catalogV2 = readCatalogV2(this.mx);
+    if (catalogV2) {
+      const profiles = catalogV2.profiles.map(convertMsc4461V2ToV3);
+      if (migrate) {
+        await saveCatalog(this.mx, profiles);
+      }
+      return profiles;
     }
 
     const index = accountData(this.mx, `${ACCOUNT_DATA_PREFIX}.index`);

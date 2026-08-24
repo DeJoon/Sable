@@ -4,6 +4,7 @@ import type { MatrixClient } from '$types/matrix-sdk';
 import {
   MATRIX_SABLE_UNSTABLE_ACCOUNT_PER_MESSAGE_PROFILES_PROPERTY_NAME,
   MATRIX_UNSTABLE_MSC4461_ACCOUNT_PER_MESSAGE_PROFILES_PROPERTY_NAME,
+  MATRIX_UNSTABLE_MSC4461_ACCOUNT_PER_MESSAGE_PROFILES_PROPERTY_NAME_V2,
 } from '$unstable/prefixes';
 import { ProfileCatalog } from './catalog';
 
@@ -32,11 +33,11 @@ function createMatrixClient(accountData: Map<string, unknown>, writable = false)
 }
 
 describe('ProfileCatalog', () => {
-  it('filters personas with malformed optional trigger variants', async () => {
+  it('filters v2 personas with malformed optional trigger variants', async () => {
     const { mx } = createMatrixClient(
       new Map([
         [
-          MATRIX_UNSTABLE_MSC4461_ACCOUNT_PER_MESSAGE_PROFILES_PROPERTY_NAME,
+          MATRIX_UNSTABLE_MSC4461_ACCOUNT_PER_MESSAGE_PROFILES_PROPERTY_NAME_V2,
           {
             profiles: [
               { id: 'valid', displayname: 'Valid', trigger: { prefix: [] } },
@@ -57,7 +58,7 @@ describe('ProfileCatalog', () => {
     );
 
     await expect(new ProfileCatalog(mx).list({ migrate: false })).resolves.toEqual([
-      { id: 'valid', displayname: 'Valid', trigger: { prefix: [] } },
+      { id: 'valid', displayname: 'Valid', triggers: [] },
     ]);
   });
 
@@ -85,7 +86,7 @@ describe('ProfileCatalog', () => {
     const accountData = new Map<string, unknown>([
       [
         MATRIX_UNSTABLE_MSC4461_ACCOUNT_PER_MESSAGE_PROFILES_PROPERTY_NAME,
-        { profiles: [{ id: 'old', displayname: 'Old', trigger: { prefix: [] } }] },
+        { profiles: [{ id: 'old', displayname: 'Old', triggers: [] }] },
       ],
       [
         `${MATRIX_SABLE_UNSTABLE_ACCOUNT_PER_MESSAGE_PROFILES_PROPERTY_NAME}.globalassociation`,
@@ -118,8 +119,8 @@ describe('ProfileCatalog', () => {
         MATRIX_UNSTABLE_MSC4461_ACCOUNT_PER_MESSAGE_PROFILES_PROPERTY_NAME,
         {
           profiles: [
-            { id: 'deleted', displayname: 'Deleted', trigger: { prefix: [] } },
-            { id: 'kept', displayname: 'Kept', trigger: { prefix: [] } },
+            { id: 'deleted', displayname: 'Deleted', triggers: [] },
+            { id: 'kept', displayname: 'Kept', triggers: [] },
           ],
         },
       ],
@@ -161,13 +162,13 @@ describe('ProfileCatalog', () => {
     const catalog = new ProfileCatalog(mx);
 
     await Promise.all([
-      catalog.merge({ id: 'first', displayname: 'First', trigger: { prefix: [] } }),
-      catalog.merge({ id: 'second', displayname: 'Second', trigger: { prefix: [] } }),
+      catalog.merge({ id: 'first', displayname: 'First', triggers: [] }),
+      catalog.merge({ id: 'second', displayname: 'Second', triggers: [] }),
     ]);
 
     await expect(catalog.list()).resolves.toEqual([
-      { id: 'first', displayname: 'First', trigger: { prefix: [] } },
-      { id: 'second', displayname: 'Second', trigger: { prefix: [] } },
+      { id: 'first', displayname: 'First', triggers: [] },
+      { id: 'second', displayname: 'Second', triggers: [] },
     ]);
   });
 

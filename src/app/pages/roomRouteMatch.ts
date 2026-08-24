@@ -1,4 +1,4 @@
-import { matchPath } from 'react-router-dom';
+import { matchPath } from 'react-router';
 import { isEventId, isRoomAlias, isRoomId } from '$utils/matrix';
 import {
   DIRECT_ROOM_FORUM_PATH,

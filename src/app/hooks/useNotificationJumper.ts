@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef } from 'react';
 import { useAtom, useAtomValue } from 'jotai';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router';
 import type { Room } from '$types/matrix-sdk';
 import { SyncState, ClientEvent, Direction } from '$types/matrix-sdk';
 import { getSlidingSyncManager } from '$client/initMatrix';
@@ -51,6 +51,7 @@ export function NotificationJumper() {
   // churn re-calls performJump (from the ClientEvent.Room listener or effect
   // re-runs) before React has committed the null, causing repeated navigation.
   const jumpingRef = useRef(false);
+  const routedRef = useRef(false);
   const waitingForTimelineRef = useRef(false);
   const timelineReadyRef = useRef(false);
 
@@ -117,8 +118,10 @@ export function NotificationJumper() {
       }
 
       try {
+        routedRef.current = true;
         navigate(path);
       } catch (error) {
+        routedRef.current = false;
         jumpingRef.current = false;
         log.error('failed to navigate to notification:', error);
       }
@@ -137,6 +140,7 @@ export function NotificationJumper() {
   // Reset the guard only when pending is replaced (new notification or cleared).
   useEffect(() => {
     jumpingRef.current = false;
+    if (pending) routedRef.current = false;
     waitingForTimelineRef.current = false;
     timelineReadyRef.current = false;
   }, [pending]);
@@ -153,7 +157,6 @@ export function NotificationJumper() {
     if (!pending) return undefined;
     if (pending.targetSessionId && pending.targetSessionId !== activeSessionId) return undefined;
     if (pending.targetSessionId && mx.getUserId() !== pending.targetSessionId) return undefined;
-
     const manager = getSlidingSyncManager(mx);
     const targetInLiveTimeline = isEventInLiveTimelineChain(
       mx.getRoom(pending.roomId),
@@ -192,7 +195,7 @@ export function NotificationJumper() {
       globalThis.clearTimeout(timeoutId);
       stopWaiting();
       if (!temporarySubscription) return;
-      if (jumpingRef.current) manager.releaseRoomSubscriptionUnlessRouted(pending.roomId);
+      if (routedRef.current) manager.releaseRoomSubscriptionUnlessRouted(pending.roomId);
       else manager.unsubscribeFromRoom(pending.roomId);
     };
   }, [pending, activeSessionId, mx]);

@@ -32,6 +32,8 @@ const {
   timelineSyncOptions,
   timelineActionsOptions,
   showToastMock,
+  markAsReadMock,
+  readMarkerInLiveTimeline,
 } = vi.hoisted(() => ({
   vListHandle: {
     scrollSize: 1000,
@@ -51,6 +53,8 @@ const {
     forwardStatus: 'idle',
     canPaginateBack: false,
     canPaginateForward: false,
+    backwardError: false,
+    forwardError: false,
     jumpFailed: false,
     focusItem: undefined as { eventId: string; scrollTo: boolean; highlight: boolean } | undefined,
     setFocusItem: vi.fn<() => void>(),
@@ -88,6 +92,8 @@ const {
   timelineSyncOptions: { current: undefined as Record<string, unknown> | undefined },
   timelineActionsOptions: { current: undefined as Record<string, unknown> | undefined },
   showToastMock: vi.fn<(text: string) => void>(),
+  markAsReadMock: vi.fn<() => void>(),
+  readMarkerInLiveTimeline: { current: false },
 }));
 
 let lastOnScroll: ((offset: number) => void) | undefined;
@@ -298,7 +304,8 @@ vi.mock('$utils/timeline', () => ({
     unrenderedJumpTarget.current?.eventId === eventId ? {} : eventTimeline.current,
   getDisplayedEventTimeline: (_linkedTimelines: unknown, eventId: string) =>
     unrenderedJumpTarget.current?.eventId === eventId ? {} : eventTimeline.current,
-  getFirstLinkedTimeline: () => firstLinkedTimeline.current,
+  getFirstLinkedTimeline: () =>
+    firstLinkedTimeline.current ?? (readMarkerInLiveTimeline.current ? liveTimeline : undefined),
   getInitialTimeline: () => undefined,
   getEventIdAbsoluteIndex: () => unrenderedJumpTarget.current?.rawIndex,
   isNewestLiveEvent: (
@@ -310,7 +317,7 @@ vi.mock('$utils/timeline', () => ({
   },
 }));
 
-vi.mock('$utils/notifications', () => ({ markAsRead: vi.fn<() => void>() }));
+vi.mock('$utils/notifications', () => ({ markAsRead: markAsReadMock }));
 
 vi.mock('$utils/dom', async (importOriginal) => {
   const actual = await importOriginal<typeof DomUtils>();
@@ -396,6 +403,8 @@ beforeEach(() => {
   liveTimeline.getEvents = () => [{ getId: () => '$evt1' }];
   navigateRoomMock.mockReset();
   showToastMock.mockReset();
+  markAsReadMock.mockReset();
+  readMarkerInLiveTimeline.current = false;
   vListProps.shift = false;
   vListProps.shiftValues.length = 0;
   timelineSync.eventsLength = 1;
@@ -405,6 +414,8 @@ beforeEach(() => {
   timelineSync.liveTimelineLinked = true;
   timelineSync.jumpFailed = false;
   timelineSync.backwardStatus = 'idle';
+  timelineSync.backwardError = false;
+  timelineSync.forwardError = false;
   timelineSync.forwardStatus = 'idle';
   (timelineSync.handleTimelinePagination as ReturnType<typeof vi.fn>).mockReset();
   (timelineSync.cancelEventTimelineLoad as ReturnType<typeof vi.fn>).mockReset();
@@ -715,8 +726,9 @@ describe('RoomTimeline content ResizeObserver', () => {
     );
   });
 
-  it('cancels a pending context load when opening an already-rendered event', () => {
-    renderTimeline();
+  it('cancels a pending context load when opening an already-rendered event', async () => {
+    const { getByText } = renderTimeline();
+    await settleInitialScroll();
 
     const handleOpenEvent = timelineActionsOptions.current?.handleOpenEvent as
       | ((eventId: string) => void)
@@ -724,6 +736,7 @@ describe('RoomTimeline content ResizeObserver', () => {
     act(() => handleOpenEvent?.('$evt1'));
 
     expect(timelineSync.cancelEventTimelineLoad).toHaveBeenCalled();
+    expect(getByText('Jump to Latest')).toBeTruthy();
   });
 
   it('keeps a fresh highlight visible for two seconds when refocusing the same event', () => {
@@ -842,7 +855,7 @@ describe('failed backfill on an empty timeline', () => {
   it('surfaces the error with a working Retry instead of endless placeholders', () => {
     timelineSync.eventsLength = 0;
     timelineSync.canPaginateBack = true;
-    timelineSync.backwardStatus = 'error';
+    timelineSync.backwardError = true;
 
     const { getByText } = renderTimeline();
 
@@ -1027,6 +1040,24 @@ describe('unread read marker (normal sync)', () => {
     });
 
     expect(processedTimelineOptions.current?.readUptoEventId).toBeUndefined();
+  });
+
+  it('does not mark the room read after scrolling to its unread boundary', async () => {
+    getRoomUnreadInfoMock.mockReturnValue({
+      readUptoEventId: '$read:example.org',
+      inLiveTimeline: true,
+      scrollTo: true,
+    });
+    readMarkerInLiveTimeline.current = true;
+    windowFocused.current = true;
+    eventTimeline.current = liveTimeline;
+    unrenderedJumpTarget.current = { eventId: '$read:example.org', rawIndex: 0 };
+
+    renderTimeline();
+
+    expect(vListHandle.scrollToIndex).toHaveBeenCalledWith(0, { align: 'start' });
+    await act(() => new Promise((resolve) => requestAnimationFrame(resolve)));
+    expect(markAsReadMock).not.toHaveBeenCalled();
   });
 });
 

@@ -9,7 +9,7 @@ import {
   useState,
 } from 'react';
 import { useAtomValue, useSetAtom } from 'jotai';
-import { matchPath, useLocation, useNavigate } from 'react-router-dom';
+import { matchPath, useLocation, useNavigate } from 'react-router';
 import { lastVisitedRoomAtom } from '$state/room/lastRoom';
 import { usePrefersReducedMotion } from '$hooks/usePrefersReducedMotion';
 import { DIRECT_PATH, EXPLORE_PATH, HOME_PATH, INBOX_PATH, SPACE_PATH } from '$pages/paths';
@@ -78,11 +78,11 @@ export function MobileNavDrawer({ nav, rail, bottomNav, children }: MobileNavDra
   const positionRef = useRef(0);
 
   const [panelIntent, setPanelIntent] = useState(contentOpen ? 1 : 0);
-  const gestureRef = useRef<ActiveTouchGesture>();
+  const gestureRef = useRef<ActiveTouchGesture | undefined>(undefined);
   const messageTargetsRef = useRef(new WeakMap<HTMLElement, MobileSwipeTarget>());
   const chatTargetsRef = useRef(new WeakMap<HTMLElement, MobileSwipeTarget>());
-  const settleAnimationRef = useRef<number>();
-  const programmaticTargetRef = useRef<number>();
+  const settleAnimationRef = useRef<number | undefined>(undefined);
+  const programmaticTargetRef = useRef<number | undefined>(undefined);
 
   const setTrackPosition = useCallback((position: number) => {
     positionRef.current = position;

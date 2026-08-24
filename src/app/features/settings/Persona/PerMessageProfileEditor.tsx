@@ -24,20 +24,17 @@ import { SettingTile } from '$components/setting-tile';
 import { AsyncStatus, useAsyncCallback } from '$hooks/useAsyncCallback';
 import { NameColorEditor } from '../account/NameColorEditor';
 import {
-  MATRIX_SABLE_UNSTABLE_MSC4461_TRIGGER_CIRCUMFIX_PROPERTY_NAME,
-  MATRIX_SABLE_UNSTABLE_MSC4461_TRIGGER_SUFFIX_PROPERTY_NAME,
   MATRIX_UNSTABLE_COLORS,
   MATRIX_UNSTABLE_PROFILE_PRONOUNS_PROPERTY_NAME,
 } from '$unstable/prefixes';
 import { accessibleColor } from '$plugins/color';
 import { ThemeKind } from '$hooks/useTheme';
 
-type Shorthand = { prefix?: string; suffix?: string };
-type ShorthandRow = Shorthand & { id: string };
+type ShorthandRow = ProfileTrigger & { id: string };
 
 type ShorthandListItemProps = ShorthandRow & {
   onDelete: (shorthandId: string) => void;
-  onChange: (shorthandId: string, shorthand: Shorthand) => void;
+  onChange: (shorthandId: string, shorthand: ProfileTrigger) => void;
 };
 function ShorthandListItem({ id, prefix, suffix, onDelete, onChange }: ShorthandListItemProps) {
   const [newPrefix, setNewPrefix] = useState(prefix);
@@ -136,46 +133,17 @@ function ShorthandListItem({ id, prefix, suffix, onDelete, onChange }: Shorthand
   );
 }
 
-function triggersToShorthandRows(trigger: ProfileTrigger): ShorthandRow[] {
-  const prefixes: ShorthandRow[] = trigger.prefix.map((str) => {
-    return { prefix: str, id: nanoid() };
-  });
-  const suffixes: ShorthandRow[] | undefined = trigger['net.f0rest.suffix']?.map((str) => {
-    return { suffix: str, id: nanoid() };
-  });
-  const circumfixes: ShorthandRow[] | undefined = trigger['net.f0rest.circumfix']?.map(
-    ({ prefix, suffix }) => {
-      return { prefix: prefix, suffix: suffix, id: nanoid() };
-    }
-  );
-
-  return prefixes.concat(suffixes ?? [], circumfixes ?? []);
+function triggersToShorthandRows(triggers: ProfileTrigger[]): ShorthandRow[] {
+  return triggers.map(({ prefix, suffix, keep_trigger }) => ({
+    prefix,
+    suffix,
+    keep_trigger,
+    id: nanoid(),
+  }));
 }
 
-function shorthandRowsToTriggers(rows: ShorthandRow[]): ProfileTrigger {
-  const prefix: string[] = [];
-  const suffix: string[] = [];
-  const circumfix: { prefix: string; suffix: string }[] = [];
-
-  rows.forEach((row) => {
-    if (row.prefix && row.suffix) {
-      circumfix.push({ prefix: row.prefix, suffix: row.suffix });
-    } else if (row.prefix) {
-      prefix.push(row.prefix);
-    } else if (row.suffix) {
-      suffix.push(row.suffix);
-    }
-  });
-
-  return {
-    prefix,
-    ...(suffix.length > 0
-      ? { [MATRIX_SABLE_UNSTABLE_MSC4461_TRIGGER_SUFFIX_PROPERTY_NAME]: suffix }
-      : {}),
-    ...(circumfix.length > 0
-      ? { [MATRIX_SABLE_UNSTABLE_MSC4461_TRIGGER_CIRCUMFIX_PROPERTY_NAME]: circumfix }
-      : {}),
-  };
+function shorthandRowsToTriggers(rows: ShorthandRow[]): ProfileTrigger[] {
+  return rows.map(({ prefix, suffix, keep_trigger }) => ({ prefix, suffix, keep_trigger }));
 }
 /**
  * the props we use for the per-message profile editor, which is used to edit a per-message profile. This is used in the settings page when the user wants to edit a profile.
@@ -188,7 +156,7 @@ export type PerMessageProfileEditorProps = {
   pronouns?: PronounSet[];
   nameColorLightTheme?: string;
   nameColorDarkTheme?: string;
-  shorthands?: ProfileTrigger;
+  shorthands?: ProfileTrigger[];
   onDelete?: (profileId: string) => void;
 };
 
@@ -255,7 +223,7 @@ export function PerMessageProfileEditor({
     setNewShorthands((s) => s?.filter((shorthand) => shorthand.id !== id));
   };
 
-  const handleSaveShorthand = (oldId: string, shorthand: Shorthand) => {
+  const handleSaveShorthand = (oldId: string, shorthand: ProfileTrigger) => {
     setNewShorthands((rows = []) => {
       const index = rows.findIndex((row) => row.id === oldId);
       if (index === -1) return rows;
@@ -358,7 +326,7 @@ export function PerMessageProfileEditor({
         displayname: newDisplayName,
         avatar_url: avatarMxc,
         [MATRIX_UNSTABLE_PROFILE_PRONOUNS_PROPERTY_NAME]: newPronouns,
-        trigger: shorthandRowsToTriggers(newShorthands ?? []),
+        triggers: shorthandRowsToTriggers(newShorthands ?? []),
         [MATRIX_UNSTABLE_COLORS]: {
           on_light: newNameColorLight ?? undefined,
           on_dark: newNameColorDark ?? undefined,

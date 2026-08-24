@@ -1,7 +1,7 @@
 import { useLayoutEffect, useRef } from 'react';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
-import { MemoryRouter, useNavigate } from 'react-router-dom';
+import { MemoryRouter, useNavigate } from 'react-router';
 import { MobileNavDrawer } from './MobileNavDrawer';
 import { useMobileNavDrawer } from './MobileNavDrawerContext';
 

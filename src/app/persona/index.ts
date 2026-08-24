@@ -1,8 +1,6 @@
 import type { AccountDataCompatVersion } from '$types/matrix/accountData';
 import type { PronounSet } from '$utils/pronouns';
 import type {
-  MATRIX_SABLE_UNSTABLE_MSC4461_TRIGGER_CIRCUMFIX_PROPERTY_NAME,
-  MATRIX_SABLE_UNSTABLE_MSC4461_TRIGGER_SUFFIX_PROPERTY_NAME,
   MATRIX_UNSTABLE_COLORS,
   MATRIX_UNSTABLE_PROFILE_PKIT_IMPORT_PROPERTY_NAME,
   MATRIX_UNSTABLE_PROFILE_PRONOUNS_PROPERTY_NAME,
@@ -10,12 +8,9 @@ import type {
 import type { ColorSet } from '$hooks/useUserProfile';
 
 export type ProfileTrigger = {
-  prefix: string[];
-  [MATRIX_SABLE_UNSTABLE_MSC4461_TRIGGER_SUFFIX_PROPERTY_NAME]?: string[];
-  [MATRIX_SABLE_UNSTABLE_MSC4461_TRIGGER_CIRCUMFIX_PROPERTY_NAME]?: {
-    prefix: string;
-    suffix: string;
-  }[];
+  prefix?: string;
+  suffix?: string;
+  keep_trigger?: boolean;
 };
 
 export type PkitImport = {
@@ -32,7 +27,7 @@ export type PerMessageProfileMsc4461 = {
   [MATRIX_UNSTABLE_PROFILE_PRONOUNS_PROPERTY_NAME]?: PronounSet[];
   [MATRIX_UNSTABLE_COLORS]?: ColorSet;
   [MATRIX_UNSTABLE_PROFILE_PKIT_IMPORT_PROPERTY_NAME]?: PkitImport;
-  trigger: ProfileTrigger;
+  triggers?: ProfileTrigger[];
   compat?: AccountDataCompatVersion;
 };
 

@@ -23,11 +23,16 @@ const tauriApi = vi.hoisted(() => ({
   ),
 }));
 
+const platform = vi.hoisted(() => ({
+  webviewStripsCustomProtocolCache: vi.fn<() => boolean>(() => true),
+}));
+
 const LOOPBACK_URL = 'http://127.0.0.1:45678/capability';
 
 vi.mock('$utils/swMediaAuth', () => swMediaAuth);
 vi.mock('$utils/mediaTransport', () => mediaTransport);
 vi.mock('@tauri-apps/api/core', () => tauriApi);
+vi.mock('$utils/platform', () => platform);
 
 describe('useRenderableMediaUrl', () => {
   beforeEach(() => {
@@ -41,6 +46,8 @@ describe('useRenderableMediaUrl', () => {
     mediaTransport.fetchMediaBlob.mockReset();
     mediaTransport.getCurrentMediaSessionScope.mockReset();
     mediaTransport.getCurrentMediaSessionScope.mockReturnValue('anonymous');
+    platform.webviewStripsCustomProtocolCache.mockReset();
+    platform.webviewStripsCustomProtocolCache.mockReturnValue(true);
     tauriApi.isTauri.mockReset();
     tauriApi.invoke.mockReset();
     tauriApi.invoke.mockResolvedValue(LOOPBACK_URL);
@@ -334,6 +341,43 @@ describe('useRenderableMediaUrl', () => {
     expect(result.current).toBe('https://example.org/avatar.png');
   });
 
+  describe('where the custom protocol keeps its cache headers', () => {
+    const RAW = 'https://matrix.example.org/_matrix/client/v1/media/thumbnail/example.org/abc123';
+
+    beforeEach(() => {
+      tauriApi.isTauri.mockReturnValue(true);
+      platform.webviewStripsCustomProtocolCache.mockReturnValue(false);
+    });
+
+    it('returns the protocol url without resolving a loopback origin', async () => {
+      const { useRenderableMediaUrl } = await import('./useRenderableMediaUrl');
+
+      const { result } = renderHook(() => useRenderableMediaUrl(RAW));
+
+      expect(result.current).toContain('sable-media://');
+      expect(result.current).not.toContain('127.0.0.1');
+      expect(tauriApi.invoke).not.toHaveBeenCalled();
+    });
+
+    it('resolves synchronously, so an avatar never renders its fallback first', async () => {
+      const { useRenderableMediaSource } = await import('./useRenderableMediaUrl');
+
+      const { result } = renderHook(() => useRenderableMediaSource(RAW));
+
+      expect(result.current).toBeDefined();
+    });
+
+    it('still resolves a loopback origin where the headers would be stripped', async () => {
+      platform.webviewStripsCustomProtocolCache.mockReturnValue(true);
+      const { useRenderableMediaUrl } = await import('./useRenderableMediaUrl');
+
+      const { result } = renderHook(() => useRenderableMediaUrl(RAW));
+
+      await waitFor(() => expect(result.current).toBe(LOOPBACK_URL));
+      expect(tauriApi.invoke).toHaveBeenCalled();
+    });
+  });
+
   describe('useAvatarMediaSource', () => {
     const RAW_URL =
       'sable-media://https://matrix.example.org/_matrix/client/v1/media/thumbnail/example.org/abc123';
@@ -368,6 +412,44 @@ describe('useRenderableMediaUrl', () => {
       expect(tauriApi.invoke).toHaveBeenCalledTimes(2);
       const retryUrl = tauriApi.invoke.mock.calls[1]?.[1].url ?? '';
       expect(retryUrl).toContain('__sable_media_retry=1');
+      vi.useRealTimers();
+    });
+
+    it('clears a mid-ladder error latch when a resolved url arrives on its own', async () => {
+      vi.useFakeTimers();
+      tauriApi.isTauri.mockReturnValue(true);
+      tauriApi.invoke.mockResolvedValue('http://127.0.0.1:45678/first-capability');
+      const { useAvatarMediaSource, clearLoopbackMediaUrlCache } =
+        await import('./useRenderableMediaUrl');
+
+      const { result } = renderHook(() => useAvatarMediaSource(RAW_URL));
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      act(() => {
+        result.current.onError();
+      });
+
+      tauriApi.invoke.mockResolvedValue('http://127.0.0.1:45678/second-capability');
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(500);
+      });
+      act(() => {
+        result.current.onError();
+      });
+      expect(result.current.error).toBe(true);
+
+      tauriApi.invoke.mockResolvedValue('http://127.0.0.1:45678/rotated-capability');
+      act(() => {
+        clearLoopbackMediaUrlCache();
+      });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+
+      expect(result.current.mediaSrc).toBe('http://127.0.0.1:45678/rotated-capability');
+      expect(result.current.error).toBe(false);
       vi.useRealTimers();
     });
 

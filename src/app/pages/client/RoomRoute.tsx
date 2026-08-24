@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams } from 'react-router';
 import { ForumView } from '$features/forum';
 import { Room } from '$features/room';
 import { useRoom } from '$hooks/useRoom';

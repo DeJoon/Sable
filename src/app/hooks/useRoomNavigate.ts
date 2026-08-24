@@ -1,6 +1,6 @@
 import { useCallback } from 'react';
-import type { NavigateOptions } from 'react-router-dom';
-import { useNavigate } from 'react-router-dom';
+import type { NavigateOptions } from 'react-router';
+import { useNavigate } from 'react-router';
 import { useAtomValue, useSetAtom } from 'jotai';
 import { getCanonicalAliasOrRoomId } from '$utils/matrix';
 import {

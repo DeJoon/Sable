@@ -1,7 +1,6 @@
 import type {
   PerMessageProfileMsc4461,
   PerMessageProfileProxyAssociationV2,
-  ProfileTrigger,
 } from '$hooks/usePerMessageProfile';
 import {
   addOrUpdatePerMessageProfile,
@@ -12,10 +11,6 @@ import {
 import { sendFeedback } from '$utils/sendFeedbackToUser';
 import type { MatrixClient, Room } from '$types/matrix-sdk';
 import { generateShortId } from '$utils/shortIdGen';
-import {
-  MATRIX_SABLE_UNSTABLE_MSC4461_TRIGGER_CIRCUMFIX_PROPERTY_NAME,
-  MATRIX_SABLE_UNSTABLE_MSC4461_TRIGGER_SUFFIX_PROPERTY_NAME,
-} from '$unstable/prefixes';
 
 const pkMemberRenameRegex = /^(pk;member)\s+"?([\w\s]+)"?\s*rename\s+"?([\w\s]+)"?$/;
 const pkMemberNewRegex = /^(pk;member)\s+new\s+"?([\w\s]+)"?$/;
@@ -48,65 +43,6 @@ export function buildProxyRegex({ prefix, suffix }: PerMessageProfileProxyAssoci
 
   const pattern = `${escape(prefix ?? '')}(.+)${escape(suffix ?? '')}`;
   return new RegExp(`^${pattern}$`);
-}
-
-export function testTriggers(triggers: ProfileTrigger, input: string): boolean {
-  const matchesPrefix = triggers.prefix.some((prefix) => input.startsWith(prefix));
-  if (matchesPrefix) return true;
-
-  const matchesSuffix = triggers[MATRIX_SABLE_UNSTABLE_MSC4461_TRIGGER_SUFFIX_PROPERTY_NAME]?.some(
-    (suffix) => input.startsWith(suffix)
-  );
-  if (matchesSuffix) return true;
-
-  const matchesCircumfix = triggers[
-    MATRIX_SABLE_UNSTABLE_MSC4461_TRIGGER_CIRCUMFIX_PROPERTY_NAME
-  ]?.some(({ prefix, suffix }) => {
-    const casePrefix = prefix ? input.startsWith(prefix) : true;
-    const caseSuffix = suffix ? input.endsWith(suffix) : true;
-
-    return casePrefix && caseSuffix;
-  });
-
-  return !!matchesCircumfix;
-}
-
-export function testProxy(
-  { prefix, suffix }: PerMessageProfileProxyAssociationV2,
-  input: string
-): boolean {
-  const matchesPrefix = prefix ? input.startsWith(prefix) : true;
-  const matchesSuffix = suffix ? input.endsWith(suffix) : true;
-
-  return matchesPrefix && matchesSuffix;
-}
-
-export function stripTrigger(triggers: ProfileTrigger, input: string): string {
-  const prefix = triggers.prefix.find((value) => input.startsWith(value));
-  if (prefix !== undefined) return stripProxy({ prefix }, input);
-
-  const suffix = triggers[MATRIX_SABLE_UNSTABLE_MSC4461_TRIGGER_SUFFIX_PROPERTY_NAME]?.find(
-    (value) => input.endsWith(value)
-  );
-  if (suffix !== undefined) return stripProxy({ suffix }, input);
-
-  const circumfix = triggers[MATRIX_SABLE_UNSTABLE_MSC4461_TRIGGER_CIRCUMFIX_PROPERTY_NAME]?.find(
-    (trigger) => input.startsWith(trigger.prefix) && input.endsWith(trigger.suffix)
-  );
-  if (circumfix) return stripProxy(circumfix, input);
-
-  return input;
-}
-
-export function stripProxy(
-  { prefix, suffix }: { prefix?: string; suffix?: string },
-  input: string
-): string {
-  let message = input;
-  if (prefix) message = message.slice(prefix.length);
-  if (suffix) message = message.slice(0, message.length - suffix.length);
-
-  return message;
 }
 
 /**
@@ -171,7 +107,7 @@ export class PKitCommandMessageHandler {
       await addOrUpdatePerMessageProfile(this.mx, {
         id: generatedID,
         displayname: memberName,
-        trigger: { prefix: [] },
+        triggers: [],
       });
       sendFeedback(
         `added new member has been created with id: ${generatedID} and name ${memberName}`,
@@ -271,19 +207,11 @@ export class PKitCommandMessageHandler {
       if (pmp && proxyTags) {
         const { prefix, suffix } = proxyTags;
 
-        if (prefix && suffix) {
-          pmp.trigger[MATRIX_SABLE_UNSTABLE_MSC4461_TRIGGER_CIRCUMFIX_PROPERTY_NAME] ??= [];
-          pmp.trigger[MATRIX_SABLE_UNSTABLE_MSC4461_TRIGGER_CIRCUMFIX_PROPERTY_NAME] = pmp.trigger[
-            MATRIX_SABLE_UNSTABLE_MSC4461_TRIGGER_CIRCUMFIX_PROPERTY_NAME
-          ].filter((trigger) => trigger.prefix !== prefix && trigger.suffix !== suffix);
-        } else if (prefix && !suffix) {
-          pmp.trigger.prefix = pmp.trigger.prefix.filter((trigger) => trigger !== prefix);
-        } else if (!prefix && suffix) {
-          pmp.trigger[MATRIX_SABLE_UNSTABLE_MSC4461_TRIGGER_SUFFIX_PROPERTY_NAME] ??= [];
-          pmp.trigger[MATRIX_SABLE_UNSTABLE_MSC4461_TRIGGER_SUFFIX_PROPERTY_NAME] = pmp.trigger[
-            MATRIX_SABLE_UNSTABLE_MSC4461_TRIGGER_SUFFIX_PROPERTY_NAME
-          ].filter((trigger) => trigger !== suffix);
+        if (!pmp.triggers) {
+          pmp.triggers = [];
         }
+        pmp.triggers.push({ prefix, suffix });
+
         await addOrUpdatePerMessageProfile(this.mx, pmp);
 
         sendFeedback(
@@ -330,18 +258,11 @@ export class PKitCommandMessageHandler {
       if (pmp) {
         const { prefix, suffix } = proxyTags;
 
-        if (prefix && suffix) {
-          (pmp.trigger[MATRIX_SABLE_UNSTABLE_MSC4461_TRIGGER_CIRCUMFIX_PROPERTY_NAME] ??= []).push({
-            prefix: prefix,
-            suffix: suffix,
-          });
-        } else if (!prefix && suffix) {
-          (pmp.trigger[MATRIX_SABLE_UNSTABLE_MSC4461_TRIGGER_SUFFIX_PROPERTY_NAME] ??= []).push(
-            suffix
-          );
-        } else if (prefix && !suffix) {
-          pmp.trigger.prefix.push(prefix);
+        if (!pmp.triggers) {
+          pmp.triggers = [];
         }
+        pmp.triggers.push({ prefix, suffix });
+
         await addOrUpdatePerMessageProfile(this.mx, pmp);
         sendFeedback(
           `Persona with ${this.useIdInsteadOfNameWherePossible ? 'id' : 'name'} "${name}" (${pmpId}) is now associated with ${matchAgainst}`,

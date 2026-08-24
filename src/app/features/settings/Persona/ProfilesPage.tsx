@@ -31,7 +31,7 @@ export function PerMessageProfilePage({ requestBack, requestClose }: PerMessageP
         pronouns={editingProfile['io.fsky.nyx.pronouns']}
         nameColorLightTheme={editingProfile['eu.she-a.color']?.on_light}
         nameColorDarkTheme={editingProfile['eu.she-a.color']?.on_dark}
-        shorthands={editingProfile.trigger}
+        shorthands={editingProfile.triggers ?? []}
         requestClose={handleEditorClose}
       />
     );

@@ -34,7 +34,7 @@ describe('PerMessageProfileEditor', () => {
         mx={{} as MatrixClient}
         profileId="old-id"
         displayName="New Profile"
-        shorthands={{ prefix: [] }}
+        shorthands={[]}
       />
     );
 

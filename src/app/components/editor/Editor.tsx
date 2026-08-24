@@ -92,7 +92,7 @@ export const CustomEditor = forwardRef<HTMLDivElement, CustomEditorProps>(
     const editableRef = useRef<HTMLDivElement | null>(null);
     const measurerRef = useRef<HTMLDivElement | null>(null);
     const latestTextRef = useRef(editor.getText());
-    const focusScrollTimerRef = useRef<number>();
+    const focusScrollTimerRef = useRef<number | undefined>(undefined);
     const [isMultiline, setIsMultiline] = useState(false);
     const [measurementVersion, setMeasurementVersion] = useState(0);
 

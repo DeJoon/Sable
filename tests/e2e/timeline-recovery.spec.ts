@@ -47,19 +47,23 @@ test.describe('timeline recovery', () => {
     await context.setOffline(true);
 
     const burstCount = 6;
+    /* eslint-disable no-await-in-loop */
     for (let i = 0; i < burstCount; i += 1) {
       txnCounter += 1;
       await sendText(hsBaseUrl, bob.accessToken, room, `${tag}-burst-${i + 1}`, txnCounter);
     }
+    /* eslint-enable no-await-in-loop */
 
     await context.setOffline(false);
 
+    /* eslint-disable no-await-in-loop */
     for (let i = 0; i < burstCount; i += 1) {
       await expect(page.getByText(`${tag}-burst-${i + 1}`, { exact: true })).toHaveCount(1, {
         timeout: 180_000,
       });
       await expect(page.getByText(`${tag}-burst-${i + 1}`, { exact: true })).toBeVisible();
     }
+    /* eslint-enable no-await-in-loop */
 
     const canonical = (await getRoomMessages(hsBaseUrl, alice.accessToken, room))
       .map((m) => m.body)

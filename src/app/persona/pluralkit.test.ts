@@ -86,9 +86,11 @@ describe('PluralkitImport', () => {
       {
         id: 'foo',
         displayname: 'Foo Bar',
-        trigger: {
-          prefix: ['Foo:'],
-        },
+        triggers: [
+          {
+            prefix: 'Foo:',
+          },
+        ],
         [MATRIX_UNSTABLE_PROFILE_PKIT_IMPORT_PROPERTY_NAME]: { id: '0', uuid: 'f00b4r' },
       },
     ]);
@@ -99,7 +101,7 @@ describe('PluralkitImport', () => {
         [
           MATRIX_UNSTABLE_MSC4461_ACCOUNT_PER_MESSAGE_PROFILES_PROPERTY_NAME,
           {
-            profiles: [{ id: 'valid', displayname: 'Valid', trigger: { prefix: [] } }],
+            profiles: [{ id: 'valid', displayname: 'Valid', triggers: [] }],
           },
         ],
       ]),
@@ -124,13 +126,15 @@ describe('PluralkitImport', () => {
     const catalog = new ProfileCatalog(mx);
     await expect(importPluralkitMembers(mx, catalog, pkData)).resolves.not.toThrow();
     await expect(catalog.list()).resolves.toEqual([
-      { id: 'valid', displayname: 'Valid', trigger: { prefix: [] } },
+      { id: 'valid', displayname: 'Valid', triggers: [] },
       {
         id: 'foo',
         displayname: 'Foo Bar',
-        trigger: {
-          prefix: ['Foo:'],
-        },
+        triggers: [
+          {
+            prefix: 'Foo:',
+          },
+        ],
         [MATRIX_UNSTABLE_PROFILE_PKIT_IMPORT_PROPERTY_NAME]: { id: '0', uuid: 'f00b4r' },
       },
     ]);
@@ -146,9 +150,11 @@ describe('PluralkitImport', () => {
               {
                 id: 'foo',
                 displayname: 'Foo Bar',
-                trigger: {
-                  prefix: ['Foo:'],
-                },
+                triggers: [
+                  {
+                    prefix: 'Foo:',
+                  },
+                ],
                 [MATRIX_UNSTABLE_COLORS]: {
                   on_dark: '#ffffff',
                   on_light: '#000000',
@@ -183,9 +189,11 @@ describe('PluralkitImport', () => {
       {
         id: 'bar',
         displayname: 'Bar Bar',
-        trigger: {
-          prefix: ['Foo:'],
-        },
+        triggers: [
+          {
+            prefix: 'Foo:',
+          },
+        ],
         [MATRIX_UNSTABLE_COLORS]: {
           on_dark: '#ffffff',
           on_light: '#000000',

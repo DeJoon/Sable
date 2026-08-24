@@ -4,6 +4,7 @@ import type { MatrixClient } from '$types/matrix-sdk';
 import {
   MATRIX_SABLE_UNSTABLE_ACCOUNT_PER_MESSAGE_PROFILES_PROPERTY_NAME,
   MATRIX_UNSTABLE_MSC4461_ACCOUNT_PER_MESSAGE_PROFILES_PROPERTY_NAME,
+  MATRIX_UNSTABLE_MSC4461_ACCOUNT_PER_MESSAGE_PROFILES_PROPERTY_NAME_V2,
 } from '$unstable/prefixes';
 import {
   addOrUpdatePerMessageProfile,
@@ -12,7 +13,7 @@ import {
   renamePerMessageProfile,
   type PerMessageProfileMsc4461,
 } from './usePerMessageProfile';
-import type { PersonaCatalogContent } from '$app/persona/catalog';
+import type { PersonaCatalogContent, PersonaV2 } from '$app/persona/catalog';
 import { projectPersona } from '$app/persona/projection';
 import { resolvePersonaProxy } from '$app/persona/proxy';
 import { resolvePersona } from '$app/persona/selection';
@@ -47,15 +48,24 @@ function createMatrixClient(profiles: PerMessageProfileMsc4461[] = []) {
 const profile = (id: string): PerMessageProfileMsc4461 => ({
   id,
   displayname: `Profile ${id}`,
-  trigger: { prefix: [] },
+  triggers: [],
+});
+
+const profileV2 = (id: string): PersonaV2 => ({
+  id,
+  displayname: `Profile ${id}`,
+  trigger: {
+    prefix: [],
+  },
 });
 
 describe('profile persistence', () => {
   it('normalizes the previously nested MSC4461 account-data payload', async () => {
     const { accountData, mx } = createMatrixClient();
-    accountData.set(MATRIX_UNSTABLE_MSC4461_ACCOUNT_PER_MESSAGE_PROFILES_PROPERTY_NAME, {
+    accountData.delete(MATRIX_UNSTABLE_MSC4461_ACCOUNT_PER_MESSAGE_PROFILES_PROPERTY_NAME);
+    accountData.set(MATRIX_UNSTABLE_MSC4461_ACCOUNT_PER_MESSAGE_PROFILES_PROPERTY_NAME_V2, {
       type: 'm.per_message_profiles',
-      content: { profiles: [profile('first')] },
+      content: { profiles: [profileV2('first')] },
     });
 
     await expect(getAllPerMessageProfiles(mx)).resolves.toEqual([profile('first')]);
@@ -83,11 +93,7 @@ describe('profile persistence', () => {
         id: 'legacy',
         displayname: 'Legacy',
         avatar_url: 'mxc://example.org/avatar',
-        trigger: {
-          prefix: [],
-          'net.f0rest.suffix': [],
-          'net.f0rest.circumfix': [],
-        },
+        triggers: [],
       },
     ]);
     expect(
@@ -96,6 +102,41 @@ describe('profile persistence', () => {
     expect(
       accountData.get(`${MATRIX_SABLE_UNSTABLE_ACCOUNT_PER_MESSAGE_PROFILES_PROPERTY_NAME}.legacy`)
     ).toBeUndefined();
+  });
+
+  it('migrates MSC4461 catalog from v2 to v3', async () => {
+    const { accountData, mx } = createMatrixClient();
+    accountData.delete(MATRIX_UNSTABLE_MSC4461_ACCOUNT_PER_MESSAGE_PROFILES_PROPERTY_NAME);
+    accountData.set(MATRIX_UNSTABLE_MSC4461_ACCOUNT_PER_MESSAGE_PROFILES_PROPERTY_NAME_V2, {
+      profiles: [
+        {
+          id: 'v2id',
+          displayname: 'V2 Persona',
+          'com.example.unknown-third-party': 'foobar',
+          trigger: {
+            prefix: ['a: '],
+            'net.f0rest.suffix': [' :b'],
+            'net.f0rest.circumfix': [{ prefix: '[', suffix: ']' }],
+          },
+        },
+      ],
+    });
+
+    const catalog = {
+      profiles: [
+        {
+          id: 'v2id',
+          displayname: 'V2 Persona',
+          'com.example.unknown-third-party': 'foobar',
+          triggers: [{ prefix: '[', suffix: ']' }, { prefix: 'a: ' }, { suffix: ' :b' }],
+        },
+      ],
+    };
+
+    await expect(getAllPerMessageProfiles(mx)).resolves.toEqual(catalog.profiles);
+    expect(
+      accountData.get(MATRIX_UNSTABLE_MSC4461_ACCOUNT_PER_MESSAGE_PROFILES_PROPERTY_NAME)
+    ).toEqual(catalog);
   });
 
   it('cleans up an empty legacy index', async () => {
@@ -116,13 +157,17 @@ describe('profile persistence', () => {
     });
   });
 
-  it('filters malformed catalog and legacy profile entries', async () => {
+  it('filters malformed legacy profile entries', async () => {
     const { accountData, mx } = createMatrixClient();
-    accountData.set(MATRIX_UNSTABLE_MSC4461_ACCOUNT_PER_MESSAGE_PROFILES_PROPERTY_NAME, {
-      profiles: [profile('valid'), { id: 'missing-trigger', displayname: 'Invalid' }],
+    accountData.delete(MATRIX_UNSTABLE_MSC4461_ACCOUNT_PER_MESSAGE_PROFILES_PROPERTY_NAME);
+    accountData.set(MATRIX_UNSTABLE_MSC4461_ACCOUNT_PER_MESSAGE_PROFILES_PROPERTY_NAME_V2, {
+      profiles: [profileV2('valid'), { id: 'missing-trigger', displayname: 'Invalid' }],
     });
     await expect(getAllPerMessageProfiles(mx)).resolves.toEqual([profile('valid')]);
+  });
 
+  it('filters malformed catalog v2 profile entries', async () => {
+    const { accountData, mx } = createMatrixClient();
     accountData.delete(MATRIX_UNSTABLE_MSC4461_ACCOUNT_PER_MESSAGE_PROFILES_PROPERTY_NAME);
     accountData.set(`${MATRIX_SABLE_UNSTABLE_ACCOUNT_PER_MESSAGE_PROFILES_PROPERTY_NAME}.index`, {
       profileIds: ['valid', 'invalid', 1],
@@ -138,7 +183,7 @@ describe('profile persistence', () => {
       {
         id: 'valid',
         displayname: 'Valid',
-        trigger: { prefix: [], 'net.f0rest.suffix': [], 'net.f0rest.circumfix': [] },
+        triggers: [],
       },
     ]);
   });
@@ -226,8 +271,8 @@ describe('profile persistence', () => {
 
 describe('persona resolution', () => {
   const personas = [
-    { ...profile('first'), trigger: { prefix: ['first: '] } },
-    { ...profile('second'), trigger: { prefix: ['second: '] } },
+    { ...profile('first'), triggers: [{ prefix: 'first: ' }] },
+    { ...profile('second'), triggers: [{ prefix: 'second: ' }] },
   ];
 
   it('applies precedence and ignores expired selections', () => {
@@ -258,10 +303,10 @@ describe('persona resolution', () => {
   });
 
   it('strips suffix and circumfix triggers', () => {
-    const suffix = { ...personas[0]!, trigger: { prefix: [], 'net.f0rest.suffix': [' -a'] } };
+    const suffix = { ...personas[0]!, triggers: [{ suffix: ' -a' }] };
     const circumfix = {
       ...personas[1]!,
-      trigger: { prefix: [], 'net.f0rest.circumfix': [{ prefix: '[', suffix: ']' }] },
+      triggers: [{ prefix: '[', suffix: ']' }],
     };
 
     expect(resolvePersonaProxy([suffix], 'hello -a')).toEqual({ persona: suffix, body: 'hello' });

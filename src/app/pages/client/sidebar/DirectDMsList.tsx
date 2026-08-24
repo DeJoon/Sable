@@ -1,6 +1,6 @@
 import { useMemo, useRef, useEffect } from 'react';
 import * as Sentry from '@sentry/react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router';
 import { Avatar, Text, Box } from 'folds';
 import { useAtomValue } from 'jotai';
 import type { Room } from '$types/matrix-sdk';

@@ -43,7 +43,6 @@ import {
 import {
   addTauriMediaRetryRevision,
   getTauriMediaRetryTarget,
-  getTauriMediaSourceUrl,
   prepareLoopbackImageSource,
 } from '$utils/mediaUrl';
 import { setMediaEncryption } from '$utils/tauriMediaEncryption';
@@ -367,9 +366,8 @@ export const ImageContent = as<'div', ImageContentProps>(
             getDownloadBlob:
               encInfo && rawMediaUrl
                 ? () =>
-                    downloadEncryptedMedia(
-                      getTauriMediaSourceUrl(rawMediaUrl) ?? rawMediaUrl,
-                      (buffer) => decryptFile(buffer, mimeType ?? FALLBACK_MIMETYPE, encInfo)
+                    downloadEncryptedMedia(rawMediaUrl, (buffer) =>
+                      decryptFile(buffer, mimeType ?? FALLBACK_MIMETYPE, encInfo)
                     )
                 : undefined,
           })

@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import type { Persona } from './index';
 import { resolvePersona } from './selection';
 
-const persona = (id: string): Persona => ({ id, displayname: id, trigger: { prefix: [] } });
+const persona = (id: string): Persona => ({ id, displayname: id });
 
 describe('resolvePersona', () => {
   it('uses proxy, latched, room, then account precedence', () => {

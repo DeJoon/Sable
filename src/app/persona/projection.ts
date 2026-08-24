@@ -1,11 +1,9 @@
 import {
-  MATRIX_SABLE_UNSTABLE_MSC4461_TRIGGER_CIRCUMFIX_PROPERTY_NAME,
-  MATRIX_SABLE_UNSTABLE_MSC4461_TRIGGER_SUFFIX_PROPERTY_NAME,
   MATRIX_UNSTABLE_COLORS,
   MATRIX_UNSTABLE_PROFILE_PKIT_IMPORT_PROPERTY_NAME,
   MATRIX_UNSTABLE_PROFILE_PRONOUNS_PROPERTY_NAME,
 } from '$unstable/prefixes';
-import type { PerMessageProfileBeeperFormat, Persona, ProfileTrigger } from './index';
+import type { PerMessageProfileBeeperFormat, Persona } from './index';
 import chroma from 'chroma-js';
 import { ThemeKind } from '$hooks/useTheme';
 import { accessibleColor } from '$plugins/color';
@@ -47,7 +45,7 @@ export function convertBeeperFormatToOurPerMessageProfile(
     [MATRIX_UNSTABLE_PROFILE_PRONOUNS_PROPERTY_NAME]:
       beeperProfile[MATRIX_UNSTABLE_PROFILE_PRONOUNS_PROPERTY_NAME],
     [MATRIX_UNSTABLE_COLORS]: beeperProfile[MATRIX_UNSTABLE_COLORS],
-    trigger: { prefix: [] },
+    triggers: [],
   };
 }
 
@@ -79,31 +77,16 @@ export function convertPluralkitFormatToOurPerMessageProfile(
   }
 
   // parse proxy tags
-  const trigger: ProfileTrigger = {
-    prefix: [],
-  };
-  if (pkitProfile.proxy_tags) {
-    pkitProfile.proxy_tags.forEach(
-      ({ prefix, suffix }: { prefix: string | null; suffix: string | null }) => {
-        if (prefix && suffix) {
-          (trigger[MATRIX_SABLE_UNSTABLE_MSC4461_TRIGGER_CIRCUMFIX_PROPERTY_NAME] ??= []).push({
-            prefix,
-            suffix,
-          });
-        } else if (!prefix && suffix) {
-          (trigger[MATRIX_SABLE_UNSTABLE_MSC4461_TRIGGER_SUFFIX_PROPERTY_NAME] ??= []).push(suffix);
-        } else if (prefix && !suffix) {
-          trigger.prefix.push(prefix);
-        }
-      }
-    );
-  }
+  const triggers = pkitProfile.proxy_tags?.map(({ prefix, suffix }) => ({
+    prefix: prefix ?? undefined,
+    suffix: suffix ?? undefined,
+  }));
 
   const profile: Persona = {
     id: pkitProfile.name,
     displayname: pkitProfile.display_name ?? pkitProfile.name,
     avatar_url: pkitAvatarUrl,
-    trigger,
+    triggers,
     [MATRIX_UNSTABLE_PROFILE_PRONOUNS_PROPERTY_NAME]: parsePronounsInput(pkitProfile.pronouns),
     [MATRIX_UNSTABLE_PROFILE_PKIT_IMPORT_PROPERTY_NAME]: {
       id: pkitProfile.id,

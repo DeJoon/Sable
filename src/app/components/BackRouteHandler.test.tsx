@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
-import { MemoryRouter, useLocation } from 'react-router-dom';
+import { MemoryRouter, useLocation } from 'react-router';
 import { Provider as JotaiProvider, createStore } from 'jotai';
 import type { MatrixClient, Room } from '$types/matrix-sdk';
 import { MatrixClientProvider } from '$hooks/useMatrixClient';

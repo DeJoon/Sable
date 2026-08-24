@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import { useCallback } from 'react';
 import { useAtomValue, useSetAtom } from 'jotai';
-import { matchPath, useLocation, useNavigate } from 'react-router-dom';
+import { matchPath, useLocation, useNavigate } from 'react-router';
 import { getHomePath, resolveSection } from '$pages/pathUtils';
 import {
   DIRECT_ROOM_FORUM_PATH,

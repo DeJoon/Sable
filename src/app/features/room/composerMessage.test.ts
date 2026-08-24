@@ -41,7 +41,6 @@ const mx = {
 const profile = (id: string, displayname: string): PerMessageProfileMsc4461 => ({
   id,
   displayname,
-  trigger: { prefix: [] },
 });
 
 /** Mirrors a command selected from autocomplete in the engine-neutral document. */
@@ -179,7 +178,7 @@ describe('buildOutgoingMessage', () => {
   });
 
   it('strips a pluralkit proxy wrapper and lets its profile win', async () => {
-    const proxied = { ...profile('proxy', 'Proxied'), trigger: { prefix: ['A: '] } };
+    const proxied = { ...profile('proxy', 'Proxied'), triggers: [{ prefix: 'A: ' }] };
     profiles.account = proxied;
 
     const result = await build('A: hello there', {

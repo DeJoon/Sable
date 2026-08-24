@@ -78,7 +78,7 @@ export function PerMessageProfileOverview({
       const newProfile: PerMessageProfileMsc4461 = {
         id: generateShortId(5),
         displayname: 'New Profile',
-        trigger: { prefix: [] },
+        triggers: [],
       };
       await addOrUpdatePerMessageProfile(mx, newProfile);
       onCreateProfile(newProfile);

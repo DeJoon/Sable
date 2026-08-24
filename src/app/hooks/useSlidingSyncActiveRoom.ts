@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { matchPath, useLocation } from 'react-router-dom';
+import { matchPath, useLocation } from 'react-router';
 import { useMatrixClient } from '$hooks/useMatrixClient';
 import { useAccountDataCallback } from '$hooks/useAccountDataCallback';
 import { getSlidingSyncManager } from '$client/initMatrix';

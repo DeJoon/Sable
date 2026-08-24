@@ -52,30 +52,6 @@ const messageOptionsMenuLayout = {
   flexDirection: 'column',
 } as const;
 
-// Portaled out of the sheet by PopOut, so it still draws its own sheet-like surface
-// and pads for the safe area itself.
-export const MessageOptionsMenu = style({
-  ...messageOptionsMenuLayout,
-  borderBottomLeftRadius: '0 !important',
-  borderBottomRightRadius: '0 !important',
-  borderBottom: 'none !important',
-  borderTopLeftRadius: `${toRem(20)} !important`,
-  borderTopRightRadius: `${toRem(20)} !important`,
-  paddingBottom: `calc(${config.space.S400} + var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px))) !important`,
-  selectors: {
-    '&::after': {
-      content: '""',
-      position: 'absolute',
-      top: '100%',
-      left: 0,
-      right: 0,
-      height: '300px',
-      backgroundColor: 'inherit',
-      border: 'none',
-    },
-  },
-});
-
 // Inside the sheet panel, which owns the background, radius, shadow and safe area.
 export const MessageOptionsSheetMenu = style({
   ...messageOptionsMenuLayout,

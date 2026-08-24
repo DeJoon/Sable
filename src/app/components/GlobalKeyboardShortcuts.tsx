@@ -8,7 +8,7 @@
  *   Ctrl+Down / Ctrl+Up: cycle through messages to reply to
  */
 import { useCallback, useRef } from 'react';
-import { useNavigate, useLocation, matchPath } from 'react-router-dom';
+import { useNavigate, useLocation, matchPath } from 'react-router';
 import { useAtomValue, useSetAtom } from 'jotai';
 import { useMatrixClient } from '$hooks/useMatrixClient';
 import { roomToParentsAtom } from '$state/room/roomToParents';

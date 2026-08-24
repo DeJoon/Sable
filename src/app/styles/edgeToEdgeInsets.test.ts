@@ -97,7 +97,7 @@ describe('android edge-to-edge inset contract', () => {
 
     expect(indexCss).toContain('@media (display-mode: standalone)');
     expect(indexCss).toContain('@supports (-webkit-touch-callout: none)');
-    expect(indexCss).toContain('var(--sable-ios-pwa-viewport-height, 100vh)');
+    expect(indexCss).toContain('var(--sable-ios-pwa-viewport-height, 100dvh)');
     expect(indexTsx).toContain('installIosPwaViewportHeight();');
     expect(iosPwaViewport).toContain("window.matchMedia('(display-mode: standalone)').matches");
     expect(iosPwaViewport).toContain('viewport.height + viewport.offsetTop');
@@ -108,6 +108,12 @@ describe('android edge-to-edge inset contract', () => {
     expect(iosPwaViewport).not.toContain('window.screen');
     expect(iosPwaViewport).toContain('MIN_KEYBOARD_HEIGHT');
     expect(iosPwaViewport).toContain('isEditableFocused');
+  });
+
+  it('lets the android keyboard shrink the layout viewport', () => {
+    const indexHtml = readWorkspaceFile('index.html');
+
+    expect(indexHtml).toContain('interactive-widget=resizes-content');
   });
 
   it('removes the scattered safe-area css consumers', () => {

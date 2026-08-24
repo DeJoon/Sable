@@ -1,7 +1,7 @@
 import { forwardRef, useState } from 'react';
 import { Box, Line, Menu, MenuItem, Text, config, toRem } from 'folds';
 import type { Room } from 'matrix-js-sdk';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router';
 import { InviteUserPrompt } from '$components/invite-user-prompt';
 import { useMatrixClient } from '$hooks/useMatrixClient';
 import { useIsDirectRoom } from '$hooks/useRoom';

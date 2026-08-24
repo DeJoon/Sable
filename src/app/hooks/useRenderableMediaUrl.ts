@@ -13,7 +13,8 @@ import {
   subscribeSWMediaAuthSupport,
 } from '$utils/swMediaAuth';
 import { rewriteAuthenticatedMediaUrl } from '$utils/matrix';
-import { addTauriMediaRetryRevision } from '$utils/mediaUrl';
+import { addMediaRetryRevision } from '$utils/mediaUrl';
+import { webviewStripsCustomProtocolCache } from '$utils/platform';
 
 type ObjectUrlEntry = {
   refs: number;
@@ -207,6 +208,7 @@ export function useRenderableMediaUrl(
     () => getCachedSWMediaAuthSupport() ?? false
   );
   const protocolUrl = tauri ? (rewriteAuthenticatedMediaUrl(url ?? null) ?? undefined) : undefined;
+  const needsLoopback = tauri && webviewStripsCustomProtocolCache();
   const generation = useSyncExternalStore(
     subscribeLoopbackGeneration,
     getLoopbackGeneration,
@@ -224,7 +226,7 @@ export function useRenderableMediaUrl(
   }));
 
   useEffect(() => {
-    if (!tauri || !protocolUrl) return undefined;
+    if (!needsLoopback || !protocolUrl) return undefined;
     const entry = resolveLoopbackUrl(protocolUrl);
     if (entry.url) {
       setLoopbackState({ source: protocolUrl, url: entry.url, generation });
@@ -239,7 +241,7 @@ export function useRenderableMediaUrl(
     return () => {
       cancelled = true;
     };
-  }, [tauri, protocolUrl, generation]);
+  }, [needsLoopback, protocolUrl, generation]);
   const needsBlob = !swMediaAuthSupported;
   const usesExistingObjectUrl = renderableUrl?.startsWith('blob:') ?? false;
   const [resolvedState, setResolvedState] = useState<ResolvedMediaUrlState>(() => {
@@ -309,6 +311,7 @@ export function useRenderableMediaUrl(
     // No protocolUrl fallback while resolving: resolveLoopbackUrl already degrades to it,
     // and handing out the custom-scheme URL first would fail a media element.
     if (!protocolUrl) return undefined;
+    if (!needsLoopback) return protocolUrl;
     // A URL resolved under an older generation is dead after a cache clear; the effect
     // re-resolves against the current session.
     if (loopbackState.source === protocolUrl && loopbackState.generation === generation) {
@@ -334,8 +337,7 @@ export function useRenderableMediaSource(
   url: string | undefined,
   retryRevision = 0
 ): string | undefined {
-  const retriedUrl =
-    url && retryRevision > 0 ? addTauriMediaRetryRevision(url, retryRevision) : url;
+  const retriedUrl = url && retryRevision > 0 ? addMediaRetryRevision(url, retryRevision) : url;
   const resolvedUrl = useRenderableMediaUrl(retriedUrl, retryRevision);
   if (resolvedUrl) return resolvedUrl;
   return isTauri() ? undefined : retriedUrl;
@@ -359,6 +361,7 @@ export function useAvatarMediaSource(src: string | undefined): AvatarMediaSource
     setRetryRevision(0);
   }, [src]);
 
+  // Cleared mid-ladder too: a suspended webview cancels loads without firing load or error.
   useEffect(() => {
     setError(false);
   }, [mediaSrc]);
