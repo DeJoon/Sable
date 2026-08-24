@@ -74,6 +74,29 @@ import { getInboxInvitesPath } from '../../pathUtils';
 
 const pushRelayLog = createDebugLogger('push-relay');
 
+export const LAST_LIVE_SYNC_TS_PREFIX = 'sable_last_live_sync_ts_';
+// A reload (e.g. after a crypto store wipe) must not make old-but-unread messages
+// look "historical" — but a checkpoint from an abandoned session is stale enough
+// that treating it as fresh would flood notifications for weeks of backlog instead.
+export const MAX_LIVE_SYNC_CHECKPOINT_AGE = 7 * 24 * 60 * 60 * 1000;
+
+export const getLastLiveSyncTs = (userId: string): number | undefined => {
+  try {
+    const stored = Number(localStorage.getItem(LAST_LIVE_SYNC_TS_PREFIX + userId));
+    return Number.isFinite(stored) && stored > 0 ? stored : undefined;
+  } catch {
+    return undefined;
+  }
+};
+
+export const setLastLiveSyncTs = (userId: string, ts: number): void => {
+  try {
+    localStorage.setItem(LAST_LIVE_SYNC_TS_PREFIX + userId, String(ts));
+  } catch {
+    // Storage unavailable/full — worst case we fall back to boot-time filtering.
+  }
+};
+
 export function InviteNotifications() {
   const invites = useAtomValue(allInvitesAtom);
   const perviousInviteLen = usePreviousValue(invites.length, 0);
@@ -167,11 +190,22 @@ export function InviteNotifications() {
 
 export function MessageNotifications() {
   const notifiedEventsRef = useRef(new Set());
-  // Record mount time so we can distinguish live events from historical backfill
-  // on sliding sync proxies that don't set num_live (which causes liveEvent=false
-  // for all events, including actually-new messages).
-  const clientStartTimeRef = useRef(Date.now());
   const mx = useMatrixClient();
+  // Anchor for distinguishing live events from historical backfill on sliding sync
+  // proxies that don't set num_live (which causes liveEvent=false for all events,
+  // including actually-new messages). Seeded from the last time we know we were
+  // genuinely live, not just Date.now() — a reload (e.g. after a crypto store wipe)
+  // would otherwise reset this to "now" and misclassify the whole catch-up backlog
+  // as historical, silently dropping notifications for anything sent while offline.
+  const clientStartTimeRef = useRef(-1);
+  if (clientStartTimeRef.current === -1) {
+    const lastLiveSyncTs = getLastLiveSyncTs(mx.getSafeUserId());
+    clientStartTimeRef.current =
+      lastLiveSyncTs !== undefined && Date.now() - lastLiveSyncTs < MAX_LIVE_SYNC_CHECKPOINT_AGE
+        ? lastLiveSyncTs
+        : Date.now();
+  }
+  const lastPersistedLiveTsRef = useRef(0);
   const useAuthentication = useMediaAuthentication();
   const [showNotifications] = useSetting(settingsAtom, 'useInAppNotifications');
   const [showSystemNotifications] = useSetting(settingsAtom, 'useSystemNotifications');
@@ -223,6 +257,15 @@ export function MessageNotifications() {
       data
     ) => {
       if (mx.getSyncState() !== SyncState.Syncing) return;
+
+      if (data.liveEvent) {
+        const now = Date.now();
+        // Throttled: this only needs to be roughly "recent", not exact.
+        if (now - lastPersistedLiveTsRef.current > 30 * 1000) {
+          lastPersistedLiveTsRef.current = now;
+          setLastLiveSyncTs(mx.getSafeUserId(), now);
+        }
+      }
 
       const eventId = mEvent.getId();
       // Record event arrival time once per eventId (re-entry via handleDecrypted must not reset it)

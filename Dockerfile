@@ -14,9 +14,10 @@ ARG VITE_BUILD_HASH
 ARG SABLE_BUILD_FLAVOR=stable
 ENV VITE_BUILD_HASH=$VITE_BUILD_HASH
 ENV SABLE_BUILD_FLAVOR=$SABLE_BUILD_FLAVOR
-COPY pnpm-lock.yaml pnpm-workspace.yaml /src/
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml /src/
 RUN pnpm fetch
 COPY . /src/
+ENV CI=true
 RUN pnpm install --offline --frozen-lockfile
 ENV NODE_OPTIONS=--max_old_space_size=4096
 RUN pnpm run build

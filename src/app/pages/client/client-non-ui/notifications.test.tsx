@@ -2,7 +2,13 @@ import { render, waitFor } from '@testing-library/react';
 import { Provider, createStore } from 'jotai';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { NativeNotificationActionRouting, NativeNotificationClickRouting } from './notifications';
+import {
+  NativeNotificationActionRouting,
+  NativeNotificationClickRouting,
+  getLastLiveSyncTs,
+  setLastLiveSyncTs,
+  MAX_LIVE_SYNC_CHECKPOINT_AGE,
+} from './notifications';
 import { activeSessionIdAtom, pendingNotificationAtom } from '$state/sessions';
 import { nativeNotificationRepliesAtom } from '$state/nativeNotificationReplies';
 
@@ -184,5 +190,44 @@ describe('NativeNotificationActionRouting', () => {
     await waitFor(() => expect(store.get(nativeNotificationRepliesAtom)).toEqual([]));
     expect(notificationUtils.markAsRead).toHaveBeenCalledOnce();
     expect(toast.showToast).not.toHaveBeenCalled();
+  });
+});
+
+describe('last-live-sync checkpoint', () => {
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
+  it('round-trips a persisted timestamp', () => {
+    setLastLiveSyncTs('@user:example.com', 12345);
+    expect(getLastLiveSyncTs('@user:example.com')).toBe(12345);
+  });
+
+  it('returns undefined when nothing has been persisted yet', () => {
+    expect(getLastLiveSyncTs('@nobody:example.com')).toBeUndefined();
+  });
+
+  it('does not confuse one user with another', () => {
+    setLastLiveSyncTs('@alice:example.com', 111);
+    expect(getLastLiveSyncTs('@bob:example.com')).toBeUndefined();
+  });
+
+  it('does not throw when storage is unavailable', () => {
+    const original = Storage.prototype.setItem;
+    Storage.prototype.setItem = () => {
+      throw new Error('storage disabled');
+    };
+    try {
+      expect(() => setLastLiveSyncTs('@user:example.com', 1)).not.toThrow();
+    } finally {
+      Storage.prototype.setItem = original;
+    }
+    expect(getLastLiveSyncTs('@user:example.com')).toBeUndefined();
+  });
+
+  it('exposes a multi-day staleness cutoff so an abandoned session is not treated as fresh', () => {
+    // Regression guard for the actual bug: a reload must reuse a recent checkpoint,
+    // but a checkpoint from weeks ago must not suppress notifications for that long.
+    expect(MAX_LIVE_SYNC_CHECKPOINT_AGE).toBeGreaterThan(24 * 60 * 60 * 1000);
   });
 });

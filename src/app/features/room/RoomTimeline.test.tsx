@@ -26,6 +26,7 @@ const {
   unrenderedJumpTarget,
   liveTimeline,
   eventTimeline,
+  firstLinkedTimeline,
   navigateRoomMock,
   vListProps,
   timelineSyncOptions,
@@ -81,6 +82,7 @@ const {
     getEvents: () => [{ getId: () => '$evt1' }] as unknown[],
   },
   eventTimeline: { current: undefined as object | undefined },
+  firstLinkedTimeline: { current: undefined as object | undefined },
   navigateRoomMock: vi.fn<() => void>(),
   vListProps: { shift: false, shiftValues: [] as boolean[] },
   timelineSyncOptions: { current: undefined as Record<string, unknown> | undefined },
@@ -296,7 +298,7 @@ vi.mock('$utils/timeline', () => ({
     unrenderedJumpTarget.current?.eventId === eventId ? {} : eventTimeline.current,
   getDisplayedEventTimeline: (_linkedTimelines: unknown, eventId: string) =>
     unrenderedJumpTarget.current?.eventId === eventId ? {} : eventTimeline.current,
-  getFirstLinkedTimeline: () => undefined,
+  getFirstLinkedTimeline: () => firstLinkedTimeline.current,
   getInitialTimeline: () => undefined,
   getEventIdAbsoluteIndex: () => unrenderedJumpTarget.current?.rawIndex,
   isNewestLiveEvent: (
@@ -390,6 +392,7 @@ beforeEach(() => {
   eventRedacted.current = false;
   unrenderedJumpTarget.current = undefined;
   eventTimeline.current = liveTimeline;
+  firstLinkedTimeline.current = undefined;
   liveTimeline.getEvents = () => [{ getId: () => '$evt1' }];
   navigateRoomMock.mockReset();
   showToastMock.mockReset();
@@ -803,15 +806,22 @@ describe('RoomTimeline content ResizeObserver', () => {
   });
 });
 
-describe('remote read receipts', () => {
+describe('read receipts', () => {
   const unread = {
     readUptoEventId: '$read:example.org',
     inLiveTimeline: true,
     scrollTo: false,
   };
 
-  it('clears the marker when the room is read on another device', () => {
+  // The divider is intentionally anchored to when the room was opened, not to
+  // read-receipt traffic — it only clears when the user sends a message
+  // (covered in useTimelineSync.test.tsx) or reopens the room. A receipt
+  // (ours or someone else's, from auto-mark-as-read or another device) must
+  // never make it disappear early.
+  it('never clears the marker, regardless of whose receipt arrives', () => {
     getRoomUnreadInfoMock.mockReturnValue(unread);
+    windowFocused.current = true;
+    firstLinkedTimeline.current = liveTimeline;
     renderTimeline();
     expect(processedTimelineOptions.current?.readUptoEventId).toBe('$read:example.org');
 
@@ -819,30 +829,11 @@ describe('remote read receipts', () => {
     act(() => {
       emitReceiptFor('@me:example.org');
     });
+    expect(processedTimelineOptions.current?.readUptoEventId).toBe('$read:example.org');
 
-    expect(processedTimelineOptions.current?.readUptoEventId).toBeUndefined();
-  });
-
-  it('ignores receipts belonging to other users', () => {
-    getRoomUnreadInfoMock.mockReturnValue(unread);
-    renderTimeline();
-
-    getRoomUnreadInfoMock.mockReturnValue(undefined);
     act(() => {
       emitReceiptFor('@bob:example.org');
     });
-
-    expect(processedTimelineOptions.current?.readUptoEventId).toBe('$read:example.org');
-  });
-
-  it('keeps the marker when the room is still unread after the receipt', () => {
-    getRoomUnreadInfoMock.mockReturnValue(unread);
-    renderTimeline();
-
-    act(() => {
-      emitReceiptFor('@me:example.org');
-    });
-
     expect(processedTimelineOptions.current?.readUptoEventId).toBe('$read:example.org');
   });
 });

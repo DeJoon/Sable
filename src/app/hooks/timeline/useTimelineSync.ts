@@ -635,13 +635,20 @@ export function useTimelineSync({
         const { threadRootId } = mEvt;
         if (threadRootId !== undefined && isThreadRelationEvent(mEvt, threadRootId)) return;
 
-        if (
+        const isOwnOutgoingMessage =
           mEvt.getSender() === mx.getUserId() &&
           mEvt.isSending() &&
           !mEvt.isRelation() &&
-          !mEvt.isRedaction() &&
-          (!isAtBottomRef.current || !atLiveEndRef.current)
-        ) {
+          !mEvt.isRedaction();
+
+        if (isOwnOutgoingMessage) {
+          // Writing a message means you've caught up — clear the divider right
+          // away instead of waiting on a read-receipt round trip.
+          readUptoEventIdRef.current = undefined;
+          setUnreadInfo(undefined);
+        }
+
+        if (isOwnOutgoingMessage && (!isAtBottomRef.current || !atLiveEndRef.current)) {
           resetAutoScrollPendingRef.current = true;
           pendingAutoScrollBehaviorRef.current = 'instant';
           focusLiveTimeline();
@@ -678,6 +685,7 @@ export function useTimelineSync({
         isAtBottomRef,
         unreadInfo,
         setUnreadInfo,
+        readUptoEventIdRef,
         hideReadsRef,
         isInactivePanelRef,
         setActiveTimeline,

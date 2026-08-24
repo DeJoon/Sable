@@ -626,6 +626,38 @@ describe('useTimelineSync', () => {
       expect(scrollToBottom).not.toHaveBeenCalled();
     });
 
+    it('clears the unread divider as soon as the user sends a message', async () => {
+      const { room, timeline, events } = createRoom();
+      const scrollToBottom = vi.fn<() => void>();
+      const setUnreadInfo = vi.fn<() => void>();
+      const readUptoEventIdRef = { current: '$read:test' as string | undefined };
+      const unread = { readUptoEventId: '$read:test', inLiveTimeline: true, scrollTo: false };
+
+      renderHook(() =>
+        useTimelineSync({
+          room: room as Room,
+          mx: makeMx(),
+          isAtBottom: true,
+          isAtBottomRef: { current: true },
+          scrollToBottom,
+          unreadInfo: unread,
+          setUnreadInfo,
+          hideReadsRef: { current: false },
+          readUptoEventIdRef,
+          isInactivePanelRef: { current: false },
+        })
+      );
+
+      await act(async () => {
+        // makeEvent() marks the event as our own local echo when sent by '@alice:test'.
+        emitLiveTimelineEvent(room, timeline, events, '@alice:test');
+        await Promise.resolve();
+      });
+
+      expect(setUnreadInfo).toHaveBeenCalledWith(undefined);
+      expect(readUptoEventIdRef.current).toBeUndefined();
+    });
+
     it('ignores non-live (historical) timeline events', async () => {
       const { room, timeline } = createRoom();
       const scrollToBottom = vi.fn<() => void>();

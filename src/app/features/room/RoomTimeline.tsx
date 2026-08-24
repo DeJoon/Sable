@@ -12,7 +12,7 @@ import {
 import type { ProseMirrorEditorController } from '$components/editor/prosemirrorController';
 import { useAtomValue, useSetAtom, useStore } from 'jotai';
 import type { Room, MatrixEvent, EventTimelineSet } from '$types/matrix-sdk';
-import { Direction, EventTimeline, EventType, MsgType, RoomEvent } from '$types/matrix-sdk';
+import { Direction, EventTimeline, EventType, MsgType } from '$types/matrix-sdk';
 import classNames from 'classnames';
 import type { VListHandle } from 'virtua';
 import { VList } from 'virtua';
@@ -22,7 +22,6 @@ import { ArrowDown, ChatTeardropDots, Checks, chipIcon } from '$components/icons
 import { MessageBase, CompactPlaceholder, DefaultPlaceholder } from '$components/message';
 import { RoomIntro } from '$components/room-intro';
 import { useMatrixClient } from '$hooks/useMatrixClient';
-import { useMatrixEvent } from '$hooks/useMatrixEvent';
 import { ScreenSize, useScreenSizeOptionally } from '$hooks/useScreenSize';
 import { useAlive } from '$hooks/useAlive';
 import { useMessageEdit } from '$hooks/useMessageEdit';
@@ -1060,6 +1059,9 @@ export function RoomTimeline({
     utils: { htmlReactParserOptions, linkifyOpts, getMemberPowerTag, parseMemberEvent },
   });
 
+  // Marking as read only clears server-side/room-list unread state. The in-timeline
+  // divider itself is intentionally left alone here — it's cleared only when the
+  // user sends a message (useTimelineSync) or when the room is reopened (fresh mount).
   const tryAutoMarkAsRead = useCallback(() => {
     if (isInactivePanel) return; // Don't clear unread while room is behind the list
     if (!readUptoEventIdRef.current) {
@@ -1087,28 +1089,6 @@ export function RoomTimeline({
         }
       },
       [tryAutoMarkAsRead, atBottomState, timelineSync.liveTimelineLinked, setUnreadInfo]
-    )
-  );
-
-  // Reading elsewhere clears the room list badge, so clear the in-room marker too.
-  useMatrixEvent(
-    room,
-    RoomEvent.Receipt,
-    useCallback(
-      (mEvent: MatrixEvent) => {
-        const myUserId = mx.getUserId();
-        if (!myUserId) return;
-        const content =
-          mEvent.getContent<Record<string, Record<string, Record<string, unknown>>>>();
-        const isMyReceipt = Object.values(content).some((byType) =>
-          Object.values(byType ?? {}).some((byUser) => myUserId in (byUser ?? {}))
-        );
-        // Re-anchoring on a partial remote read would move the divider mid-read.
-        if (!isMyReceipt || getRoomUnreadInfo(room)) return;
-        readUptoEventIdRef.current = undefined;
-        setUnreadInfo(undefined);
-      },
-      [mx, room]
     )
   );
 
