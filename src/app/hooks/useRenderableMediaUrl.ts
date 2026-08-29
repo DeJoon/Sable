@@ -351,7 +351,15 @@ type AvatarMediaSource = {
   onError: () => void;
 };
 
-export function useAvatarMediaSource(src: string | undefined): AvatarMediaSource {
+type AvatarMediaSourceOptions = {
+  crossOrigin?: 'anonymous';
+};
+
+export function useAvatarMediaSource(
+  src: string | undefined,
+  options?: AvatarMediaSourceOptions
+): AvatarMediaSource {
+  const crossOrigin = options?.crossOrigin;
   const [error, setError] = useState(false);
   const [retryRevision, setRetryRevision] = useState(0);
   const mediaSrc = useRenderableMediaSource(src, retryRevision);
@@ -361,19 +369,25 @@ export function useAvatarMediaSource(src: string | undefined): AvatarMediaSource
     setRetryRevision(0);
   }, [src]);
 
-  // Cleared mid-ladder too: a suspended webview cancels loads without firing load or error.
   useEffect(() => {
-    setError(false);
-  }, [mediaSrc]);
+    if (!error || !mediaSrc) return undefined;
+
+    const probe = new Image();
+    if (crossOrigin && !mediaSrc.startsWith('blob:')) {
+      probe.crossOrigin = crossOrigin;
+    }
+    const onLoad = () => setError(false);
+    probe.addEventListener('load', onLoad, { once: true });
+    probe.src = mediaSrc;
+
+    return () => probe.removeEventListener('load', onLoad);
+  }, [crossOrigin, error, mediaSrc]);
 
   useEffect(() => {
     if (!error) return undefined;
     const delay = AVATAR_RETRY_DELAYS_MS[retryRevision];
     if (delay === undefined) return undefined;
-    const timer = setTimeout(() => {
-      setError(false);
-      setRetryRevision((revision) => revision + 1);
-    }, delay);
+    const timer = setTimeout(() => setRetryRevision((revision) => revision + 1), delay);
     return () => clearTimeout(timer);
   }, [error, retryRevision]);
 

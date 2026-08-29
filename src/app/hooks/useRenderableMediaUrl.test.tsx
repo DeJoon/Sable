@@ -381,6 +381,24 @@ describe('useRenderableMediaUrl', () => {
   describe('useAvatarMediaSource', () => {
     const RAW_URL =
       'sable-media://https://matrix.example.org/_matrix/client/v1/media/thumbnail/example.org/abc123';
+    const imageProbes: HTMLImageElement[] = [];
+
+    beforeEach(() => {
+      imageProbes.length = 0;
+      vi.spyOn(globalThis, 'Image').mockImplementation(function ImageMock() {
+        const image = document.createElement('img');
+        imageProbes.push(image);
+        return image;
+      });
+    });
+
+    const loadLatestProbe = () => {
+      const probe = imageProbes.at(-1);
+      if (!probe) throw new Error('Expected an avatar image probe.');
+      act(() => {
+        probe.dispatchEvent(new Event('load'));
+      });
+    };
 
     it('retries with a fresh revision after the image fails to load', async () => {
       vi.useFakeTimers();
@@ -407,8 +425,10 @@ describe('useRenderableMediaUrl', () => {
         await vi.advanceTimersByTimeAsync(500);
       });
 
-      expect(result.current.error).toBe(false);
       expect(result.current.mediaSrc).toBe('http://127.0.0.1:45678/fresh-capability');
+      expect(result.current.error).toBe(true);
+      loadLatestProbe();
+      expect(result.current.error).toBe(false);
       expect(tauriApi.invoke).toHaveBeenCalledTimes(2);
       const retryUrl = tauriApi.invoke.mock.calls[1]?.[1].url ?? '';
       expect(retryUrl).toContain('__sable_media_retry=1');
@@ -449,6 +469,8 @@ describe('useRenderableMediaUrl', () => {
       });
 
       expect(result.current.mediaSrc).toBe('http://127.0.0.1:45678/rotated-capability');
+      expect(result.current.error).toBe(true);
+      loadLatestProbe();
       expect(result.current.error).toBe(false);
       vi.useRealTimers();
     });
@@ -476,6 +498,7 @@ describe('useRenderableMediaUrl', () => {
         await act(async () => {
           await vi.advanceTimersByTimeAsync(delay);
         });
+        loadLatestProbe();
         expect(result.current.error).toBe(false);
       };
       await failAndExhaustRetry(500);

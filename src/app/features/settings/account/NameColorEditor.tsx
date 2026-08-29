@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Box, Button, config, color, Text, Input, IconButton } from 'folds';
 import { menuIcon, X } from '$components/icons/phosphor';
-import { HexColorPicker } from 'react-colorful';
 import { SettingTile } from '$components/setting-tile';
 import { HexColorPickerPopOut } from '$components/HexColorPickerPopOut';
 import { isValidHex } from '$hooks/useUserProfile';
@@ -116,9 +115,7 @@ export function NameColorEditor({
                   <Text size="B300">Save</Text>
                 </Button>
               )}
-              <HexColorPickerPopOut
-                picker={<HexColorPicker color={tempColor ?? '#FFFFFF'} onChange={handleUpdate} />}
-              >
+              <HexColorPickerPopOut color={tempColor ?? '#FFFFFF'} onChange={handleUpdate}>
                 {(onOpen, opened) => (
                   <Button
                     onClick={onOpen}

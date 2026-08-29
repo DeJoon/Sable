@@ -47,7 +47,7 @@ export function UserAvatar({
       className={classNames(css.UserAvatar, className)}
       src={mediaSrc}
       alt={alt}
-      loading="lazy"
+      loading="eager"
       decoding="async"
       onError={onError}
       onLoad={handleImageLoad}

@@ -16,6 +16,11 @@
   <url type="bugtracker">https://github.com/SableClient/Sable/issues</url>
   <url type="vcs-browser">https://github.com/SableClient/Sable</url>
 
+  <branding>
+    <color type="primary" scheme_preference="light">#b9abfa</color>
+    <color type="primary" scheme_preference="dark">#4b3f8f</color>
+  </branding>
+
   <content_rating type="oars-1.1">
     <content_attribute id="social-chat">intense</content_attribute>
     <content_attribute id="social-audio">intense</content_attribute>
@@ -43,10 +48,10 @@
 
   <launchable type="desktop-id">moe.sable.client.desktop</launchable>
 
-    <screenshots>
+  <screenshots>
     <screenshot type="default">
       <image>https://raw.githubusercontent.com/SableClient/Sable/dev/docs/screenshots/timeline.png</image>
-      <caption>A room timeline</caption>
+      <caption>Catching up on a room timeline</caption>
     </screenshot>
   </screenshots>
 

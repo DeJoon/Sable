@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { existsSync, mkdirSync, rmSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, renameSync, rmSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 
@@ -13,20 +13,38 @@ if (!['dev', 'nightly'].includes(flavor)) {
 }
 
 const root = process.cwd();
-const output = path.join(root, 'src-tauri', 'icons', 'generated', flavor);
-const source = path.join(root, 'src-tauri', 'icons', 'build-icons', `${flavor}.svg`);
+const icons = path.join(root, 'src-tauri', 'icons');
+const output = path.join(icons, 'generated', flavor);
+const buildIcons = path.join(icons, 'build-icons');
 
-if (!existsSync(source)) {
-  console.error(`Launcher icon source not found: ${source}`);
-  process.exit(1);
+const androidSource = path.join(buildIcons, `${flavor}.svg`);
+const iosSource = path.join(buildIcons, `${flavor}-ios.svg`);
+const iosScratch = path.join(output, '.ios-pass');
+
+function generate(source, out) {
+  if (!existsSync(source)) {
+    console.error(`Launcher icon source not found: ${source}`);
+    process.exit(1);
+  }
+
+  const result = spawnSync('pnpm', ['tauri', 'icon', source, '--output', out], {
+    cwd: root,
+    stdio: 'inherit',
+  });
+
+  if (result.status !== 0) process.exit(result.status ?? 1);
 }
 
 rmSync(output, { recursive: true, force: true });
 mkdirSync(output, { recursive: true });
 
-const result = spawnSync('pnpm', ['tauri', 'icon', source, '--output', output], {
-  cwd: root,
-  stdio: 'inherit',
-});
+generate(androidSource, output);
+generate(iosSource, iosScratch);
 
-if (result.status !== 0) process.exit(result.status ?? 1);
+rmSync(path.join(output, 'ios'), { recursive: true, force: true });
+renameSync(path.join(iosScratch, 'ios'), path.join(output, 'ios'));
+rmSync(iosScratch, { recursive: true, force: true });
+
+['mipmap-anydpi-v26/ic_launcher.xml', 'values/ic_launcher_background.xml'].forEach((file) => {
+  copyFileSync(path.join(icons, 'android', file), path.join(output, 'android', file));
+});

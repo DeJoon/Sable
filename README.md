@@ -27,6 +27,15 @@ brew install --cask SableClient/sable/sable
 
 The fully qualified name matters: since [Homebrew 6.0.0](https://brew.sh/2026/06/11/homebrew-6.0.0/) non-official taps need explicit trust, and installing this way trusts just this one cask. `brew tap` followed by a short-name install now fails unless you also run `brew trust`.
 
+On Linux, nightly builds have their own Flatpak remote, rebuilt from `dev` every night:
+
+```sh
+flatpak remote-add --if-not-exists sable-nightly https://sableclient.github.io/Sable/sable-nightly.flatpakrepo
+flatpak install sable-nightly moe.sable.client.Nightly
+```
+
+It installs alongside the stable Flathub build under a separate application ID. Built by the `build-nightly-flatpak` and `publish-nightly-flatpak` jobs in [`tauri-build.yml`](.github/workflows/tauri-build.yml).
+
 ## Android (Obtainium)
 
 Android APKs are published to every release, and [Obtainium](https://obtainium.imranr.dev) keeps them updated straight from GitHub. Each release also ships an `obtainium.json` app config. Use it for the nightly channel, where prereleases and date-based version tracking have to be enabled to follow the rolling `nightly` tag.

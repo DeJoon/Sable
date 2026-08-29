@@ -1,4 +1,5 @@
 import { type FormEvent, useCallback, useEffect, useRef, useState } from 'react';
+import { getIdentifier } from '@tauri-apps/api/app';
 import {
   Box,
   Button,
@@ -26,6 +27,7 @@ import { useMatrixClient } from '$hooks/useMatrixClient';
 import { useClientConfig } from '$hooks/useClientConfig';
 import { pushSubscriptionAtom } from '$state/pushSubscription';
 import { unifiedPushEndpointAtom, type UnifiedPushState } from '$state/unifiedPushEndpoint';
+
 import { isMobileOrTablet } from '$utils/platform';
 import { isIosTauri } from '$features/settings/notifications/TauriNotificationsApiClient';
 import { isTauri } from '@tauri-apps/api/core';
@@ -55,6 +57,8 @@ import {
   tryEnableUnifiedPush,
   type UnifiedPushTransportConfigInput,
 } from './UnifiedPushNotifications';
+import { getWebPushServerSupport } from './webPushSupport';
+import { deliveryRouteDetail, deliveryRouteSummary, describeDeliveryRoute } from './deliveryRoute';
 import { normalizeErrorMessage } from './UnifiedPushTransport';
 import {
   ensureUnifiedPushDistributorSelection,
@@ -104,9 +108,8 @@ function getNativePushConfigError(clientConfig: ReturnType<typeof useClientConfi
     return 'Native push requires pushNotificationDetails.nativePushAppID in config.json.';
   }
 
-  if (!clientConfig.pushNotificationDetails?.pushNotifyUrl) {
-    return 'Native push requires pushNotificationDetails.pushNotifyUrl in config.json.';
-  }
+  // pushNotifyUrl is intentionally not required here: MSC4174 web push needs no
+  // gateway, and legacy paths surface a missing gateway at registration time.
 
   return null;
 }
@@ -224,6 +227,9 @@ function cleanPushTransportOverrides(overrides: PushTransportOverrides): PushTra
   if (overrides.unifiedPushDistributor?.trim()) {
     next.unifiedPushDistributor = overrides.unifiedPushDistributor.trim();
   }
+  if (overrides.unifiedPushEmbeddedServerUrl?.trim()) {
+    next.unifiedPushEmbeddedServerUrl = overrides.unifiedPushEmbeddedServerUrl.trim();
+  }
   return next;
 }
 
@@ -308,7 +314,17 @@ function NotificationTransportOverrideInput({
   );
 }
 
-function labelUnifiedPushDistributorOption(distributor: string): string {
+/** The in-app websocket distributor, as the notifications plugin names it. */
+const EMBEDDED_WEBSOCKET_DISTRIBUTOR = 'embedded-websocket';
+
+/**
+ * `appId` is this app's own package, which the embedded-FCM distributor registers under.
+ * It is no longer offered, but a device that already selected it keeps showing it.
+ */
+export function labelUnifiedPushDistributorOption(distributor: string, appId?: string): string {
+  if (distributor === EMBEDDED_WEBSOCKET_DISTRIBUTOR) return 'Built-in';
+  if (appId && distributor === appId) return 'Built-in (old, via Google)';
+
   const lastSegment = distributor
     .split(/[./]/)
     .map((segment) => segment.trim())
@@ -328,6 +344,7 @@ function BackgroundPushNotificationSetting() {
       clientConfig.pushTransport?.unifiedPushAppID ??
       clientConfig.pushNotificationDetails?.unifiedPushAppID,
     unifiedPushDistributor: clientConfig.pushTransport?.unifiedPushDistributor,
+    unifiedPushEmbeddedServerUrl: clientConfig.pushTransport?.unifiedPushEmbeddedServerUrl,
   };
   const [backgroundPushEnabled, setBackgroundPushEnabled] = useSetting(
     settingsAtom,
@@ -343,7 +360,10 @@ function BackgroundPushNotificationSetting() {
     'pushTransportOverride'
   );
   const [useRichPushPayloads] = useSetting(settingsAtom, 'useRichPushPayloads');
-  const [pushNotifyUrlOverride] = useSetting(settingsAtom, 'pushNotifyUrlOverride');
+  const [pushNotifyUrlOverride, setPushNotifyUrlOverride] = useSetting(
+    settingsAtom,
+    'pushNotifyUrlOverride'
+  );
   const pushSubAtom = useAtom(pushSubscriptionAtom);
   const [upEndpoint, setUpEndpoint] = useAtom(unifiedPushEndpointAtom);
   const unifiedPushStateRef = useRef<UnifiedPushState>(upEndpoint);
@@ -353,6 +373,9 @@ function BackgroundPushNotificationSetting() {
     pushTransportOverride.unifiedPushDistributor ?? ''
   );
   const [availableDistributors, setAvailableDistributors] = useState<string[]>([]);
+  const [distributorScan, setDistributorScan] = useState(0);
+  const [serverSendsWebPush, setServerSendsWebPush] = useState(false);
+  const [appIdentifier, setAppIdentifier] = useState<string>();
   const browserPermission = usePermissionState('notifications', getNotificationState());
   const isTauriRuntime = isTauri();
   const runtimePlatform = getBackgroundPushPlatform(isTauriRuntime);
@@ -387,12 +410,48 @@ function BackgroundPushNotificationSetting() {
     )
   ).map((distributor) => ({
     value: distributor,
-    label: labelUnifiedPushDistributorOption(distributor),
+    label: labelUnifiedPushDistributorOption(distributor, appIdentifier),
   }));
 
   useEffect(() => {
     unifiedPushStateRef.current = upEndpoint;
   }, [upEndpoint]);
+
+  // Read rather than guessed: the app's own package is indistinguishable from any other
+  // distributor by name alone.
+  useEffect(() => {
+    if (!isTauriRuntime) return;
+    void getIdentifier()
+      .then(setAppIdentifier)
+      .catch(() => undefined);
+  }, [isTauriRuntime]);
+
+  // The gateway is only consulted when the homeserver cannot push WebPush itself.
+  useEffect(() => {
+    let cancelled = false;
+    getWebPushServerSupport(mx)
+      .then((support) => {
+        if (!cancelled) setServerSendsWebPush(support.supported);
+      })
+      .catch(() => {
+        if (!cancelled) setServerSendsWebPush(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [mx]);
+
+  // Distributors are separate apps, so one can be installed or removed while this screen
+  // is open. Re-scan whenever the app comes back to the foreground.
+  useEffect(() => {
+    if (runtimePlatform !== 'android') return undefined;
+
+    const rescanWhenVisible = () => {
+      if (document.visibilityState === 'visible') setDistributorScan((scan) => scan + 1);
+    };
+    document.addEventListener('visibilitychange', rescanWhenVisible);
+    return () => document.removeEventListener('visibilitychange', rescanWhenVisible);
+  }, [runtimePlatform]);
 
   useEffect(() => {
     if (runtimePlatform !== 'android') {
@@ -433,7 +492,12 @@ function BackgroundPushNotificationSetting() {
     return () => {
       active = false;
     };
-  }, [runtimePlatform, pushTransportOverride.unifiedPushDistributor, setPushTransportOverride]);
+  }, [
+    runtimePlatform,
+    distributorScan,
+    pushTransportOverride.unifiedPushDistributor,
+    setPushTransportOverride,
+  ]);
 
   const updatePushTransportOverride = (patch: Partial<PushTransportOverrides>) => {
     setPushTransportOverride((current) =>
@@ -447,6 +511,7 @@ function BackgroundPushNotificationSetting() {
   const buildUnifiedPushTransportConfig = (): UnifiedPushTransportConfigInput => ({
     unifiedPushGatewayUrl: effectivePushTransport.unifiedPushGatewayUrl,
     unifiedPushAppID: effectivePushTransport.unifiedPushAppID,
+    unifiedPushEmbeddedServerUrl: effectivePushTransport.unifiedPushEmbeddedServerUrl,
     vapidPublicKey: clientConfig.pushNotificationDetails?.vapidPublicKey,
     webPushAppID: clientConfig.pushNotificationDetails?.webPushAppID,
     pushNotifyUrl: clientConfig.pushNotificationDetails?.pushNotifyUrl,
@@ -503,7 +568,7 @@ function BackgroundPushNotificationSetting() {
           throw new Error('Browser notification permission was not granted.');
         }
       }
-      await enablePushNotifications(mx, clientConfig, pushSubAtom);
+      await enablePushNotifications(mx, clientConfig, pushSubAtom, pushNotifyUrlOverride);
       return;
     }
 
@@ -528,7 +593,14 @@ function BackgroundPushNotificationSetting() {
       throw new Error(nativePushConfigError);
     }
 
-    await enableNativePush(mx, clientConfig);
+    const native = await enableNativePush(mx, clientConfig, pushNotifyUrlOverride);
+    setUnifiedPushEndpointState({
+      endpoint: native.endpoint ?? native.pushkey,
+      appId: clientConfig.pushNotificationDetails?.nativePushAppID ?? '',
+      gatewayUrl: native.gatewayUrl,
+      status: 'registered',
+      permissionState: 'granted',
+    });
   };
 
   const deactivateTransport = async (kind: BackgroundPushKind | null) => {
@@ -700,6 +772,17 @@ function BackgroundPushNotificationSetting() {
     }
   };
 
+  const deliveryRoute =
+    backgroundPushEnabled && effectiveKind
+      ? describeDeliveryRoute({
+          homeserverUrl: mx.baseUrl,
+          serverSendsWebPush,
+          gatewayUrl: upEndpoint?.gatewayUrl,
+          endpoint: upEndpoint?.endpoint,
+          embedded: upEndpoint?.distributor === EMBEDDED_WEBSOCKET_DISTRIBUTOR,
+        })
+      : undefined;
+
   const transportDescription = (() => {
     if (error) {
       return (
@@ -776,13 +859,20 @@ function BackgroundPushNotificationSetting() {
         description={transportDescription}
         after={renderTransportToggle()}
       />
+      {deliveryRoute && (
+        <SettingTile
+          title="Delivery Route"
+          focusId="push-delivery-route"
+          description={`${deliveryRouteSummary(deliveryRoute)} — ${deliveryRouteDetail(deliveryRoute)}`}
+        />
+      )}
       {supportedModes.length > 2 && (
         <SettingTile
           title="Transport Mode"
           focusId="background-push-transport-mode"
-          description={`Current mode: ${labelTransportMode(
-            selectedTransportMode
-          )}${effectiveKind ? ` (${labelTransportKind(effectiveKind)})` : ''}`}
+          description={`Current mode: ${labelTransportMode(selectedTransportMode)}${
+            effectiveKind ? ` (${labelTransportKind(effectiveKind)})` : ''
+          }`}
           after={
             <SettingMenuSelector
               value={selectedTransportMode}
@@ -828,6 +918,17 @@ function BackgroundPushNotificationSetting() {
             }
           />
           <NotificationTransportOverrideInput
+            focusId="unified-push-embedded-server-url"
+            title="Built-in distributor server"
+            description="Endpoint server used when no distributor app is installed and this build has no FCM."
+            name="unifiedPushEmbeddedServerUrl"
+            value={pushTransportOverride.unifiedPushEmbeddedServerUrl ?? ''}
+            placeholder={pushTransportDefaults.unifiedPushEmbeddedServerUrl ?? 'https://ntfy.sh'}
+            onSave={(nextValue) =>
+              updatePushTransportOverride({ unifiedPushEmbeddedServerUrl: nextValue })
+            }
+          />
+          <NotificationTransportOverrideInput
             focusId="unified-push-app-id"
             title="UnifiedPush App ID"
             description={`Default: ${pushTransportDefaults.unifiedPushAppID ?? 'none'}`}
@@ -837,6 +938,29 @@ function BackgroundPushNotificationSetting() {
             onSave={(nextValue) => updatePushTransportOverride({ unifiedPushAppID: nextValue })}
           />
         </>
+      )}
+      {backgroundPushSupported && serverSendsWebPush && (
+        <SettingTile
+          title="Push Gateway"
+          focusId="web-push-gateway-url"
+          description="Not used: your homeserver sends web push itself (MSC4174)."
+        />
+      )}
+      {backgroundPushSupported && !serverSendsWebPush && (
+        <NotificationTransportOverrideInput
+          focusId="web-push-gateway-url"
+          title="Push Gateway URL"
+          description={`Your homeserver does not support MSC4174 web push, so pushes go through this gateway. Default: ${
+            clientConfig.pushNotificationDetails?.pushNotifyUrl ?? 'none'
+          }`}
+          name="pushNotifyUrlOverride"
+          value={pushNotifyUrlOverride ?? ''}
+          placeholder={
+            clientConfig.pushNotificationDetails?.pushNotifyUrl ??
+            'https://sygnal.example.org/_matrix/push/v1/notify'
+          }
+          onSave={(nextValue) => setPushNotifyUrlOverride(nextValue.trim() || undefined)}
+        />
       )}
     </>
   );

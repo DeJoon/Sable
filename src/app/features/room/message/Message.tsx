@@ -61,7 +61,6 @@ import { MessageEditor } from './MessageEditor';
 import * as css from './styles.css';
 import { modalAtom, ModalType } from '$state/modal';
 import { OptionQuickMenu } from '$components/message/modals/Options';
-import { useRenderableMediaUrl } from '$hooks/useRenderableMediaUrl';
 
 export type ReactionHandler = (keyOrMxc: string, shortcode: string) => void;
 
@@ -505,8 +504,6 @@ function MessageInternal(
     return mxc ? mxcUrlToHttp(mx, mxc, useAuthentication, 48, 48, 'crop') : undefined;
   }, [pmp, memberAvatarMxc, profile.avatarUrl, mx, useAuthentication]);
 
-  const cachedAvatar = useRenderableMediaUrl(avatarUrl ?? undefined);
-
   // UI State
   const [isDesktopHover, setIsDesktopHover] = useState(false);
   const { hoverProps } = useHover({
@@ -538,6 +535,7 @@ function MessageInternal(
   const [parsePronouns] = useSetting(settingsAtom, 'parsePronouns');
 
   const [useRightBubbles] = useSetting(settingsAtom, 'useRightBubbles');
+  const [showAllTimestamps] = useSetting(settingsAtom, 'showAllTimestamps');
   const { cleanedDisplayName, inlinePronoun } = useMemo(() => {
     const rawName = pmp?.displayname || resolvedSenderDisplayName || '';
     return getParsedPronouns(rawName, parsePronouns);
@@ -661,7 +659,32 @@ function MessageInternal(
           </Box>
         </Box>
       );
-    return <></>;
+    return showAllTimestamps ? (
+      <Box
+        gap="300"
+        direction={
+          messageLayout === MessageLayout.Compact ||
+          (messageLayout === MessageLayout.Bubble && useRightBubbles && senderId === mx.getUserId())
+            ? 'RowReverse'
+            : 'Row'
+        }
+        justifyContent="SpaceBetween"
+        alignItems="Baseline"
+        grow="Yes"
+      >
+        <Box grow="Yes" style={{ minWidth: 0 }} />
+        <Box shrink="No" gap="100">
+          <Time
+            ts={mEvent.getTs()}
+            compact={messageLayout === MessageLayout.Compact}
+            hour24Clock={hour24Clock}
+            dateFormatString={dateFormatString}
+          />
+        </Box>
+      </Box>
+    ) : (
+      <></>
+    );
   };
 
   const avatarJSX = (collapsed?: boolean) => {
@@ -680,7 +703,7 @@ function MessageInternal(
           >
             <UserAvatar
               userId={senderId}
-              src={cachedAvatar}
+              src={avatarUrl ?? undefined}
               alt={cleanedDisplayName}
               renderFallback={() => userFallbackIcon('md')}
             />

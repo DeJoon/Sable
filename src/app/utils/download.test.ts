@@ -46,9 +46,9 @@ vi.mock('$state/toast', () => ({ showToast: mocks.showToast }));
 vi.mock('$utils/mediaTransport', () => ({ fetchMediaBlob: mocks.fetchMediaBlob }));
 vi.mock('$utils/tauriMediaEncryption', () => ({ setMediaEncryption: mocks.setMediaEncryption }));
 vi.mock('tauri-plugin-android-fs-api', () => ({
-  AndroidFs: mocks.androidFs,
-  AndroidPublicGeneralPurposeDir: { Download: 'Download' },
-  AndroidPublicImageDir: { Pictures: 'Pictures' },
+  ...mocks.androidFs,
+  PublicGeneralPurposeDir: { Download: 'Download' },
+  PublicImageDir: { Pictures: 'Pictures' },
 }));
 vi.mock('@tauri-apps/plugin-dialog', () => ({ save: mocks.save }));
 vi.mock('@tauri-apps/plugin-fs', () => ({ writeFile: mocks.writeFile }));

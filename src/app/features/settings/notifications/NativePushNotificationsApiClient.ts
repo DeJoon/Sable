@@ -1,5 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
 import { isAndroidTauri } from './TauriNotificationsApiClient';
+import type { PushAccount } from './pushAccount';
 
 export type NativePushRegistration = {
   deviceToken: string;
@@ -10,7 +11,10 @@ export type NativePushRegistration = {
 export type NativePushNotificationsApi = {
   isPermissionGranted: () => Promise<boolean | null>;
   requestPermission: () => Promise<NotificationPermission>;
-  registerForPushNotifications: (vapid?: string) => Promise<NativePushRegistration>;
+  registerForPushNotifications: (
+    vapid?: string,
+    account?: PushAccount
+  ) => Promise<NativePushRegistration>;
   unregisterForPushNotifications: () => Promise<void>;
 };
 
@@ -22,9 +26,11 @@ export async function getNativePushNotificationsApi(): Promise<NativePushNotific
       (notificationsApi) => ({
         isPermissionGranted: notificationsApi.isPermissionGranted,
         requestPermission: notificationsApi.requestPermission,
-        registerForPushNotifications: (vapid?: string) =>
+        registerForPushNotifications: (vapid?: string, account?: PushAccount) =>
           invoke<NativePushRegistration>('plugin:notifications|register_for_push_notifications', {
             vapid,
+            userId: account?.userId,
+            deviceId: account?.deviceId,
             ...(isAndroidTauri() ? { provider: 'fcm' } : {}),
           }),
         unregisterForPushNotifications: notificationsApi.unregisterForPushNotifications,

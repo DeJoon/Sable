@@ -34,7 +34,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('@tauri-apps/plugin-dialog', () => ({ open: mocks.open }));
 vi.mock('@tauri-apps/plugin-fs', () => ({ readFile: mocks.readFile, remove: mocks.remove }));
-vi.mock('tauri-plugin-android-fs-api', () => ({ AndroidFs: mocks.androidFs }));
+vi.mock('tauri-plugin-android-fs-api', () => ({ ...mocks.androidFs }));
 vi.mock('$utils/platform', () => ({ isAndroidTauri: mocks.isAndroidTauri }));
 
 const androidUri = (uri: string): AndroidUri => ({ uri, documentTopTreeUri: null });

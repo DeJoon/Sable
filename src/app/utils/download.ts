@@ -134,7 +134,7 @@ export async function saveMediaToGallery(
   }
 
   if (platform === 'android') {
-    const { AndroidFs, AndroidPublicImageDir } = await import('tauri-plugin-android-fs-api');
+    const AndroidFs = await import('tauri-plugin-android-fs-api');
     try {
       const blob = await resolveBlob(input);
       const bytes = new Uint8Array(await blob.arrayBuffer());
@@ -146,7 +146,7 @@ export async function saveMediaToGallery(
 
       await saveWithUniqueName(filename, async (name) => {
         const uri = await AndroidFs.createNewPublicImageFile(
-          AndroidPublicImageDir.Pictures,
+          AndroidFs.PublicImageDir.Pictures,
           name,
           mediaMimeType,
           { isPending: true, requestPermission: true }
@@ -203,8 +203,7 @@ export async function saveFileToDevice(
       const bytes = new Uint8Array(await blob.arrayBuffer());
 
       if (osType() === 'android') {
-        const { AndroidFs, AndroidPublicGeneralPurposeDir } =
-          await import('tauri-plugin-android-fs-api');
+        const AndroidFs = await import('tauri-plugin-android-fs-api');
         if (!(await AndroidFs.checkPublicFilesPermission())) {
           const granted = await AndroidFs.requestPublicFilesPermission();
           if (!granted) throw new Error('Storage permission was denied');
@@ -212,7 +211,7 @@ export async function saveFileToDevice(
 
         await saveWithUniqueName(filename, async (name) => {
           const uri = await AndroidFs.createNewPublicFile(
-            AndroidPublicGeneralPurposeDir.Download,
+            AndroidFs.PublicGeneralPurposeDir.Download,
             name,
             mimeType || blob.type || null,
             { isPending: true, requestPermission: true }

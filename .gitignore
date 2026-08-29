@@ -70,3 +70,7 @@ result
 ## auto-generated pre-commit config
 .pre-commit-config.yaml
 src-tauri/icons/generated/
+
+# Rendered by render-flatpak-nightly.mjs
+packaging/flatpak/nightly/moe.sable.client.Nightly.yml
+packaging/flatpak/nightly/moe.sable.client.Nightly.metainfo.xml

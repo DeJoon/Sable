@@ -26,7 +26,6 @@ import {
   Trash,
   X,
 } from '$components/icons/phosphor';
-import { HexColorPicker } from 'react-colorful';
 import { useAtomValue } from 'jotai';
 import { Page, PageContent, PageHeader } from '$components/page';
 import type { IPowerLevels } from '$hooks/usePowerLevels';
@@ -134,7 +133,8 @@ function EditPower({ maxPower, power, tag, onSave, onClose }: Readonly<EditPower
             <Text size="L400">Color</Text>
             <Box gap="200" alignItems="Center">
               <HexColorPickerPopOut
-                picker={<HexColorPicker color={tagColor} onChange={handleUpdateColor} />}
+                color={tagColor}
+                onChange={handleUpdateColor}
                 onRemove={() => setTagColor('#FFFFFF')}
               >
                 {(openPicker, opened) => (

@@ -15,6 +15,8 @@ import {
 import { fetch } from '$utils/fetch';
 import { matrixFetch } from './matrixFetch';
 import { clearMediaCache } from '$utils/mediaCache';
+import { isTauri } from '@tauri-apps/api/core';
+import { engineWipe } from '$generated/tauri/commands';
 
 import { clearNavToActivePathStore } from '$state/navToActivePath';
 import type { Session, Sessions, SessionStoreName } from '$state/sessions';
@@ -33,6 +35,11 @@ import { pushSessionToSW } from '../sw-session';
 import { assertAuthMetadataIssuer, createSessionTokenRefresher } from './oidcTokenRefresher';
 import { revokeOAuthToken } from './oauthTokenRevocation';
 import { clearSecretStorageKeys, cryptoCallbacks } from './secretStorageKeys';
+import {
+  installRustCrypto,
+  isLegacyWasmCryptoStoreError,
+  rustEngineEnabled,
+} from '$app/crypto/install';
 import type { SlidingSyncDiagnostics } from './slidingSync';
 import {
   prepareSlidingSyncTimelines,
@@ -60,6 +67,52 @@ const debugLog = createDebugLogger('initMatrix');
 const slidingSyncByClient = new WeakMap<MatrixClient, SlidingSyncManager>();
 const membershipActionCleanupByClient = new WeakMap<MatrixClient, () => void>();
 const presenceSyncByClient = new WeakMap<MatrixClient, PresenceSyncManager>();
+
+// Two MatrixClients on one crypto store corrupt it, and initRustCrypto leaves it to the
+// application to prevent that, so track which client owns each store.
+const liveClientByCryptoStore = new Map<string, MatrixClient>();
+const cryptoStoreByClient = new WeakMap<MatrixClient, string>();
+
+export const getCryptoStoreOwner = (storeKey: string): MatrixClient | undefined =>
+  liveClientByCryptoStore.get(storeKey);
+
+export const claimCryptoStore = (mx: MatrixClient, storeKey: string): void => {
+  liveClientByCryptoStore.set(storeKey, mx);
+  cryptoStoreByClient.set(mx, storeKey);
+};
+
+export const releaseCryptoStore = (mx: MatrixClient): void => {
+  const storeKey = cryptoStoreByClient.get(mx);
+  if (storeKey === undefined) return;
+  cryptoStoreByClient.delete(mx);
+  // A superseded client must not evict the entry of whichever client replaced it.
+  if (liveClientByCryptoStore.get(storeKey) === mx) liveClientByCryptoStore.delete(storeKey);
+};
+
+const evictPreviousCryptoStoreOwner = (storeKey: string): void => {
+  const previous = liveClientByCryptoStore.get(storeKey);
+  if (!previous) return;
+
+  const wasRunning = previous.clientRunning;
+  const previousSyncState = previous.getSyncState();
+
+  log.warn('initClient: crypto store already owned by a live client — stopping it first');
+  debugLog.warn('sync', 'Duplicate crypto client init — stopping previous owner', {
+    wasRunning,
+    previousSyncState,
+  });
+  Sentry.metrics.count('sable.crypto.duplicate_client', 1, {
+    attributes: { was_running: wasRunning },
+  });
+  // An Error, not a message, so the stack names what re-entered initClient.
+  Sentry.captureException(new Error('Duplicate MatrixClient for one crypto store'), {
+    tags: { area: 'crypto_store_ownership' },
+    extra: { was_running: wasRunning, previous_sync_state: previousSyncState },
+  });
+
+  // stopClient releases the store as part of its teardown.
+  stopClient(previous);
+};
 
 export const ownsActiveMediaSession = (session?: Session): boolean => {
   if (!session) return true;
@@ -119,6 +172,27 @@ const startPresenceAfterInitialSync = (
   return cleanup;
 };
 
+// The SDK's only check runs inside `initRustCrypto`, before the client starts, and latches off.
+export const recheckKeyBackupAfterInitialSync = (mx: MatrixClient): void => {
+  const recheck = () => {
+    mx.removeListener(ClientEvent.Sync, onSync);
+    const crypto = mx.getCrypto();
+    if (!crypto) return;
+    crypto.checkKeyBackupAndEnable().catch((error: unknown) => {
+      debugLog.warn('sync', 'Failed to re-check key backup after initial sync', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    });
+  };
+
+  const onSync = (state: SyncState) => {
+    if (isInitialSyncReady(state)) recheck();
+  };
+
+  if (isInitialSyncReady(mx.getSyncState())) recheck();
+  else mx.on(ClientEvent.Sync, onSync);
+};
+
 type StartupPhase = 'sync_store' | 'rust_crypto' | 'client_init' | 'client_start';
 
 const measureStartupPhase = async <T>(
@@ -162,6 +236,41 @@ type SlidingSyncRequestWithConnId = MSC3575SlidingSyncRequest & {
 export const newSlidingSyncConnId = (): string =>
   `sable-${globalThis.crypto?.randomUUID?.().slice(0, 8) ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`}`;
 
+type CryptoWithDeviceListInvalidation = { markAllTrackedUsersAsDirty: () => Promise<void> };
+
+const coalesceDeviceListInvalidation = (mx: MatrixClient) => {
+  let invalidatedThisRun = false;
+  let patched: CryptoWithDeviceListInvalidation | undefined;
+  let restore: (() => void) | undefined;
+
+  const install = (invalidationAlreadyRan: boolean): void => {
+    const crypto = mx.getCrypto?.() as unknown as CryptoWithDeviceListInvalidation | undefined;
+    if (!crypto?.markAllTrackedUsersAsDirty || crypto === patched) return;
+
+    patched = crypto;
+    invalidatedThisRun = invalidationAlreadyRan;
+    const original = crypto.markAllTrackedUsersAsDirty.bind(crypto);
+    restore = () => {
+      crypto.markAllTrackedUsersAsDirty = original;
+    };
+    crypto.markAllTrackedUsersAsDirty = async () => {
+      if (invalidatedThisRun) return;
+      invalidatedThisRun = true;
+      await original();
+    };
+  };
+
+  install(false);
+
+  return {
+    onRequest: (pos: string | undefined) => install(pos === undefined),
+    onResponse: (pos: string | undefined) => {
+      if (pos !== undefined) invalidatedThisRun = false;
+    },
+    dispose: () => restore?.(),
+  };
+};
+
 export function installSlidingSyncRequestPatch(
   mx: MatrixClient,
   manager: SlidingSyncManager
@@ -169,6 +278,7 @@ export function installSlidingSyncRequestPatch(
   slidingSyncRequestCleanupByClient.get(mx)?.();
 
   const connId = newSlidingSyncConnId();
+  const deviceListInvalidation = coalesceDeviceListInvalidation(mx);
   const mxWritable = mx as MatrixClientWithWritableSlidingSync;
   const original = mx.slidingSync.bind(mx) as SlidingSyncMethod;
   mxWritable.slidingSync = async (reqBody, baseUrl, abortSignal) => {
@@ -190,8 +300,10 @@ export function installSlidingSyncRequestPatch(
 
     const roomIds = manager.getActiveRoomSubscriptionIds();
     scopeTypingExtension(req.extensions, roomIds);
+    deviceListInvalidation.onRequest(req.pos);
 
     const response = await original(reqBody, baseUrl, abortSignal);
+    deviceListInvalidation.onResponse(response.pos);
     trackResponse(response);
     // Must run before the SDK processes the response. A throw would reach the SDK's
     // loop, which drops the response and retries the same `pos` forever.
@@ -212,6 +324,7 @@ export function installSlidingSyncRequestPatch(
 
   slidingSyncRequestCleanupByClient.set(mx, () => {
     slidingSyncRequestCleanupByClient.delete(mx);
+    deviceListInvalidation.dispose();
     mxWritable.slidingSync = original;
   });
 }
@@ -230,6 +343,29 @@ const deleteSessionStores = async (storeName: SessionStoreName): Promise<void> =
     deleteDatabase(storeName.crypto),
     deleteDatabase(`${storeName.rustCryptoPrefix}::matrix-sdk-crypto`),
   ]);
+};
+
+const clearSessionCaches = (session: Session): void => {
+  SlidingSyncSidebarCache.clear(session.userId);
+  clearCachedVersions(session.baseUrl, session.userId);
+  clearCachedUserProfiles(session.userId);
+  clearSecretStorageKeys();
+};
+
+export const discardSessionStores = async (session: Session): Promise<void> => {
+  clearSessionCaches(session);
+  const storeName = getSessionStoreName(session);
+  await deleteSessionStores(storeName);
+  await wipeNativeCryptoStore(session);
+};
+
+const wipeNativeCryptoStore = async (session: Session): Promise<void> => {
+  if (!isTauri() || !session.deviceId) return;
+  try {
+    await engineWipe({ userId: session.userId, deviceId: session.deviceId });
+  } catch (error) {
+    log.warn('wipeNativeCryptoStore failed', session.userId, error);
+  }
 };
 
 const isMismatch = (err: unknown): boolean => {
@@ -304,9 +440,23 @@ const initializeClient = async (
   });
 
   const syncStorePromise = measureStartupPhase('sync_store', () => indexedDBStore.startup());
-  const cryptoPromise = measureStartupPhase('rust_crypto', () =>
-    mx.initRustCrypto({ cryptoDatabasePrefix })
-  );
+  const cryptoPromise = measureStartupPhase('rust_crypto', async () => {
+    let nativeEngine: boolean;
+    try {
+      nativeEngine = await rustEngineEnabled(cryptoDatabasePrefix);
+    } catch (error) {
+      if (!isLegacyWasmCryptoStoreError(error)) throw error;
+      await mx.initRustCrypto({ cryptoDatabasePrefix });
+      error.client = mx;
+      throw error;
+    }
+
+    if (nativeEngine) {
+      await installRustCrypto(mx);
+      return;
+    }
+    await mx.initRustCrypto({ cryptoDatabasePrefix });
+  });
   const [syncStoreResult, cryptoResult] = await Promise.allSettled([
     syncStorePromise,
     cryptoPromise,
@@ -317,7 +467,7 @@ const initializeClient = async (
     return { ok: false, error: syncStoreResult.reason, phase: 'sync_store' };
   }
   if (cryptoResult.status === 'rejected') {
-    mx.stopClient();
+    if (!isLegacyWasmCryptoStoreError(cryptoResult.reason)) mx.stopClient();
     return { ok: false, error: cryptoResult.reason, phase: 'rust_crypto' };
   }
 
@@ -361,6 +511,7 @@ export const initClient = async (session: Session): Promise<MatrixClient> => {
   const initStartTime = performance.now();
   let initOutcome = 'success';
   try {
+    evictPreviousCryptoStoreOwner(storeName.rustCryptoPrefix);
     const result = await initializeClient(session, storeName.rustCryptoPrefix);
     if (!result.ok) {
       if (!isMismatch(result.error)) {
@@ -382,6 +533,10 @@ export const initClient = async (session: Session): Promise<MatrixClient> => {
     }
 
     result.mx.setMaxListeners(50);
+    claimCryptoStore(result.mx, storeName.rustCryptoPrefix);
+    debugLog.info('sync', 'Matrix client initialised, crypto store claimed', {
+      userId: session.userId,
+    });
     return result.mx;
   } catch (error) {
     initOutcome = 'error';
@@ -531,7 +686,11 @@ export const startClient = async (mx: MatrixClient, config?: StartClientConfig):
     });
   }
 
-  debugLog.info('sync', 'Starting Matrix client', { userId: mx.getUserId() });
+  debugLog.info('sync', 'Starting Matrix client', {
+    userId: mx.getUserId(),
+    transport: useSliding ? 'sliding' : 'classic',
+    alreadyRunning: mx.clientRunning,
+  });
 
   let manager: SlidingSyncManager | undefined;
 
@@ -566,6 +725,7 @@ export const startClient = async (mx: MatrixClient, config?: StartClientConfig):
       { transport: useSliding ? 'sliding' : 'classic' }
     );
     if (!useSliding) installSyncStorePersistence(mx);
+    recheckKeyBackupAfterInitialSync(mx);
     if (manager && (await manager.waitForSidebarCacheHydration())) {
       config?.onCachedRoomsLoaded?.();
     }
@@ -586,7 +746,13 @@ export const startClient = async (mx: MatrixClient, config?: StartClientConfig):
 
 export const stopClient = (mx: MatrixClient): void => {
   log.log('stopClient', mx.getUserId());
-  debugLog.info('sync', 'Stopping client', { userId: mx.getUserId() });
+  // stopClient closes the OlmMachine even when the client never ran, so record it.
+  debugLog.info('sync', 'Stopping client', {
+    userId: mx.getUserId(),
+    wasRunning: mx.clientRunning,
+    syncState: mx.getSyncState(),
+  });
+  releaseCryptoStore(mx);
   slidingSyncRequestCleanupByClient.get(mx)?.();
   disposeSyncStorePersistence(mx);
   disposeSlidingSync(mx);
@@ -659,17 +825,13 @@ export const logoutClient = async (mx: MatrixClient, session?: Session) => {
   }
 
   if (session) {
-    SlidingSyncSidebarCache.clear(session.userId);
-    clearCachedVersions(session.baseUrl, session.userId);
-    clearCachedUserProfiles(session.userId);
-    clearSecretStorageKeys();
+    clearSessionCaches(session);
     destroyLocalNotificationCache(session.userId);
     clearLocalNotificationCache(session.userId);
     const storeName: SessionStoreName = getSessionStoreName(session);
     await mx.clearStores({ cryptoDatabasePrefix: storeName.rustCryptoPrefix });
-    await deleteDatabase(storeName.sync);
-    await deleteDatabase(storeName.crypto);
-    await deleteDatabase(`${storeName.rustCryptoPrefix}::matrix-sdk-crypto`);
+    await deleteSessionStores(storeName);
+    await wipeNativeCryptoStore(session);
   } else {
     await mx.clearStores();
     window.localStorage.clear();

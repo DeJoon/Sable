@@ -1,5 +1,4 @@
 import {
-  type CryptoBackend,
   type IPusherRequest,
   type MatrixClient,
   MatrixEvent,
@@ -13,6 +12,9 @@ import {
 import { getMxIdLocalPart } from '$utils/matrix';
 import { getStateEvent } from '$utils/room/hierarchy';
 import { createDebugLogger } from '$utils/debugLogger';
+import type { DecryptedPushEvent } from '$app/crypto/pushDecrypt';
+import { decryptPushEventNatively } from '$app/crypto/pushDecrypt';
+import { pushAccount, type PushAccount } from './pushAccount';
 import {
   registerUnifiedPushTransport,
   type UnifiedPushRegistrationResult,
@@ -22,7 +24,7 @@ import {
   createUnifiedPushMessageListener,
   parseUnifiedPushMessage,
 } from './UnifiedPushMessageListener';
-import { addPluginListener, invoke } from '@tauri-apps/api/core';
+import { addPluginListener, invoke, isTauri } from '@tauri-apps/api/core';
 import { getSlidingSyncManager } from '$client/initMatrix';
 import type { PushTransportConfig } from './NotificationTransport';
 import { getTauriNotificationsApi, isMobileTauri } from './TauriNotificationsApiClient';
@@ -31,8 +33,17 @@ import {
   withPushPayloadFormat,
   type PushPusherSettings,
 } from './PushPusherConfig';
+import {
+  acknowledgeWebPushPusher,
+  getWebPushServerSupport,
+  isWebPushActivationPayload,
+  removeStaleHttpPushers,
+} from './webPushSupport';
+import { MATRIX_UNSTABLE_MSC4174_WEBPUSH_PUSHER_KIND } from '$unstable/prefixes';
 
 const UP_PUBLIC_GATEWAY = 'https://matrix.gateway.unifiedpush.org/_matrix/push/v1/notify';
+/** The in-app distributor relays through a public gateway unless one is configured. */
+export const DEFAULT_EMBEDDED_GATEWAY = 'https://ntfy.sh';
 export const DEFAULT_UNIFIED_PUSH_APP_ID = 'moe.sable.up';
 const unifiedPushLog = createDebugLogger('unifiedpush');
 
@@ -87,7 +98,7 @@ async function ensureNotificationChannels(
 
 export type UnifiedPushTransportConfigInput = Pick<
   PushTransportConfig,
-  'unifiedPushGatewayUrl' | 'unifiedPushAppID'
+  'unifiedPushGatewayUrl' | 'unifiedPushAppID' | 'unifiedPushEmbeddedServerUrl'
 > & {
   vapidPublicKey?: string;
   webPushAppID?: string;
@@ -123,7 +134,9 @@ export type EnableUnifiedPushResult =
   | Exclude<UnifiedPushRegistrationResult, { status: 'registered' }>;
 
 async function registerUnifiedPushWithTimeout(
-  vapid?: string
+  vapid?: string,
+  embeddedServerUrl?: string,
+  account?: PushAccount
 ): Promise<UnifiedPushRegistrationResult> {
   let timeoutId: ReturnType<typeof setTimeout> | undefined;
   const timeout = new Promise<never>((_, reject) => {
@@ -133,12 +146,39 @@ async function registerUnifiedPushWithTimeout(
   });
 
   try {
-    return await Promise.race([registerUnifiedPushTransport(vapid), timeout]);
+    return await Promise.race([
+      registerUnifiedPushTransport(vapid, embeddedServerUrl, account),
+      timeout,
+    ]);
   } finally {
     if (timeoutId !== undefined) {
       clearTimeout(timeoutId);
     }
   }
+}
+
+/**
+ * A provider that speaks the Matrix push protocol answers `/_matrix/push/v1/notify`
+ * with `unifiedpush.gateway == "matrix"`. Preferring it keeps delivery on the provider
+ * the endpoint already belongs to.
+ */
+export async function discoverPushGateway(endpoint: string): Promise<string> {
+  let candidate: string;
+  try {
+    candidate = new URL('/_matrix/push/v1/notify', endpoint).toString();
+  } catch {
+    return UP_PUBLIC_GATEWAY;
+  }
+
+  try {
+    const response = await fetch(candidate, { method: 'GET' });
+    if (!response.ok) return UP_PUBLIC_GATEWAY;
+    const body = (await response.json()) as { unifiedpush?: { gateway?: unknown } };
+    if (body?.unifiedpush?.gateway === 'matrix') return candidate;
+  } catch {
+    // Unreachable or not JSON: the provider does not proxy.
+  }
+  return UP_PUBLIC_GATEWAY;
 }
 
 export async function tryEnableUnifiedPush(
@@ -148,7 +188,14 @@ export async function tryEnableUnifiedPush(
   const notificationsApi = await getTauriNotificationsApi();
   await ensureNotificationChannels(notificationsApi);
 
-  const registration = await registerUnifiedPushWithTimeout(config?.vapidPublicKey);
+  // MSC4174: subscribe with the homeserver VAPID key when it pushes directly.
+  const webPushSupport = await getWebPushServerSupport(mx);
+  const vapid = webPushSupport.supported ? webPushSupport.vapidPublicKey : config?.vapidPublicKey;
+  const registration = await registerUnifiedPushWithTimeout(
+    vapid,
+    trimConfigValue(config?.unifiedPushEmbeddedServerUrl) ?? DEFAULT_EMBEDDED_GATEWAY,
+    pushAccount(mx)
+  );
 
   if (registration.status !== 'registered') {
     return registration;
@@ -158,38 +205,73 @@ export async function tryEnableUnifiedPush(
   const deviceDisplayName =
     (await mx.getDevice(mx.getDeviceId() ?? ''))?.display_name ?? 'Android Device';
 
-  if (registration.p256dh && registration.auth && config?.webPushAppID && config?.pushNotifyUrl) {
-    const pushNotifyUrl = resolvePushNotifyUrl(config.pushNotifyUrl, config?.pushNotifyUrlOverride);
-    await mx.setPusher({
-      kind: 'http',
-      app_id: config.webPushAppID,
-      pushkey: registration.p256dh,
-      app_display_name: 'Sable (UnifiedPush)',
-      device_display_name: deviceDisplayName,
-      lang: navigator.language || 'en',
-      data: withPushPayloadFormat(
-        {
-          url: pushNotifyUrl,
-          endpoint,
-          p256dh: registration.p256dh,
-          auth: registration.auth,
-          default_payload: { user_id: mx.getSafeUserId() },
-        },
-        config?.useRichPushPayloads
-      ),
-      append: false,
-    } as unknown as IPusherRequest);
+  if (registration.p256dh && registration.auth && config?.webPushAppID) {
+    if (webPushSupport.supported) {
+      // MSC4174: data.url is the distributor's push endpoint, not a gateway.
+      await mx.setPusher({
+        kind: MATRIX_UNSTABLE_MSC4174_WEBPUSH_PUSHER_KIND,
+        app_id: config.webPushAppID,
+        pushkey: registration.p256dh,
+        app_display_name: 'Sable (UnifiedPush)',
+        device_display_name: deviceDisplayName,
+        lang: navigator.language || 'en',
+        data: withPushPayloadFormat(
+          {
+            url: endpoint,
+            auth: registration.auth,
+            default_payload: { user_id: mx.getSafeUserId() },
+          },
+          config?.useRichPushPayloads
+        ),
+        append: false,
+      } as unknown as IPusherRequest);
 
-    return {
-      status: 'registered',
-      endpoint,
-      gatewayUrl: pushNotifyUrl,
-      distributor: registration.distributor,
-    };
+      await removeStaleHttpPushers(mx, config.webPushAppID, [deviceDisplayName]);
+
+      return {
+        status: 'registered',
+        endpoint,
+        gatewayUrl: endpoint,
+        distributor: registration.distributor,
+      };
+    }
+
+    if (config?.pushNotifyUrl) {
+      const pushNotifyUrl = resolvePushNotifyUrl(
+        config.pushNotifyUrl,
+        config?.pushNotifyUrlOverride
+      );
+      await mx.setPusher({
+        kind: 'http',
+        app_id: config.webPushAppID,
+        pushkey: registration.p256dh,
+        app_display_name: 'Sable (UnifiedPush)',
+        device_display_name: deviceDisplayName,
+        lang: navigator.language || 'en',
+        data: withPushPayloadFormat(
+          {
+            url: pushNotifyUrl,
+            endpoint,
+            p256dh: registration.p256dh,
+            auth: registration.auth,
+            default_payload: { user_id: mx.getSafeUserId() },
+          },
+          config?.useRichPushPayloads
+        ),
+        append: false,
+      } as unknown as IPusherRequest);
+
+      return {
+        status: 'registered',
+        endpoint,
+        gatewayUrl: pushNotifyUrl,
+        distributor: registration.distributor,
+      };
+    }
   }
 
   const resolvedConfig = resolveUnifiedPushPusherConfig(config);
-  const gatewayUrl = resolvedConfig.gatewayUrl ?? UP_PUBLIC_GATEWAY;
+  const gatewayUrl = resolvedConfig.gatewayUrl ?? (await discoverPushGateway(endpoint));
 
   await mx.setPusher({
     kind: 'http',
@@ -254,7 +336,7 @@ async function getCurrentDeviceUnifiedPushPushkeys(
       (pusher) =>
         pusher.app_id === appId &&
         pusher.device_display_name === deviceDisplayName &&
-        pusher.kind === 'http' &&
+        (pusher.kind === 'http' || pusher.kind === MATRIX_UNSTABLE_MSC4174_WEBPUSH_PUSHER_KIND) &&
         isNonEmptyString(pusher.pushkey)
     )
     .map((pusher) => pusher.pushkey);
@@ -357,8 +439,8 @@ async function resolvePreviewEvent(
   try {
     const evt = await mx.fetchRoomEvent(roomId, eventId);
     const mEvent = new MatrixEvent(evt);
-    if (mEvent.isEncrypted() && mx.getCrypto()) {
-      await mEvent.attemptDecryption(mx.getCrypto() as CryptoBackend);
+    if (mEvent.isEncrypted()) {
+      await mx.decryptEventIfNeeded(mEvent);
     }
     return mEvent;
   } catch (error) {
@@ -498,7 +580,6 @@ async function dismissLegacyGroupSummary(userId: string): Promise<void> {
   }
 }
 
-/** Clears accumulated messages for a room and dismisses its notification. */
 export async function clearRoomNotification(userId: string, roomId: string) {
   const key = `${userId}\u0000${roomId}`;
   await enqueueRoomOperation(key, async () => {
@@ -554,7 +635,6 @@ async function postRoomNotification(
   return true;
 }
 
-/** Handles a rich push payload containing full event details (type, room_name, content, etc.). */
 async function handleRichPushPayload(
   pushData: UnifiedPushPayload,
   settings: NotificationSettings,
@@ -749,10 +829,11 @@ function scheduleEncryptedPreviewEnrichment(
   if (!initialSettings.showMessageContent || !initialSettings.showEncryptedMessageContent) return;
 
   const crypto = initialSettings.mx.getCrypto();
+  const encryptedContent = pushData.content;
   const decrypted = buildEncryptedPreviewEvent(roomId, eventId, pushData);
-  if (!crypto || !decrypted) return;
+  if (!crypto || !decrypted || !encryptedContent) return;
 
-  const applyDecryptedPreview = async (): Promise<void> => {
+  const applyDecryptedPreview = async (plaintext: DecryptedPushEvent): Promise<void> => {
     await enqueueRoomOperation(cache.key, async () => {
       const liveSettings = getSettings();
       const isAllowed =
@@ -764,8 +845,8 @@ function scheduleEncryptedPreviewEnrichment(
       }
 
       const enrichedPreview = resolveNotificationPreviewText({
-        content: decrypted.getContent(),
-        eventType: decrypted.getType(),
+        content: plaintext.content,
+        eventType: plaintext.eventType,
         isEncryptedRoom: true,
         showMessageContent: liveSettings.showMessageContent,
         showEncryptedMessageContent: liveSettings.showEncryptedMessageContent,
@@ -773,7 +854,7 @@ function scheduleEncryptedPreviewEnrichment(
       if (!enrichedPreview || enrichedPreview === ENCRYPTED_MESSAGE_PREVIEW) return;
 
       const liveRoom = liveSettings.mx.getRoom(roomId);
-      const decryptedSender = decrypted.getSender();
+      const decryptedSender = plaintext.sender;
       const senderName = decryptedSender
         ? (liveRoom?.getMember(decryptedSender)?.name ??
           getMxIdLocalPart(decryptedSender) ??
@@ -818,16 +899,38 @@ function scheduleEncryptedPreviewEnrichment(
     });
   };
 
-  whenDecrypted(decrypted, applyDecryptedPreview);
-  void decrypted.attemptDecryption(crypto as CryptoBackend).catch(() => {
-    unifiedPushLog.warn('notification', 'Encrypted preview decryption failed');
-  });
+  const fallBackToSdkDecryption = (): void => {
+    whenDecrypted(decrypted, () =>
+      applyDecryptedPreview({
+        content: decrypted.getContent(),
+        eventType: decrypted.getType(),
+        sender: decrypted.getSender(),
+      })
+    );
+    void initialSettings.mx.decryptEventIfNeeded(decrypted).catch(() => {
+      unifiedPushLog.warn('notification', 'Encrypted preview decryption failed');
+    });
+  };
+
+  // The engine reads the crypto store directly, so it answers without waiting on the SDK
+  // pipeline; it returns null exactly in the late-key case the SDK path retries.
+  void decryptPushEventNatively(initialSettings.mx.getUserId(), initialSettings.mx.getDeviceId(), {
+    roomId,
+    eventId,
+    sender: pushData.sender,
+    content: encryptedContent,
+  })
+    .then((plaintext) => {
+      if (plaintext) {
+        void applyDecryptedPreview(plaintext);
+        return;
+      }
+      fallBackToSdkDecryption();
+    })
+    // Without this the preview would stay at its "Encrypted message" baseline forever.
+    .catch(fallBackToSdkDecryption);
 }
 
-/**
- * Handles a minimal push payload (event_id + room_id + counts) from
- * the public UnifiedPush gateway, looking up context from local SDK state.
- */
 async function handleMinimalPushPayload(
   pushData: UnifiedPushPayload,
   settings: NotificationSettings,
@@ -1028,12 +1131,26 @@ async function handleUnifiedPushPayload(
 ) {
   const settings = getSettings();
 
-  // Skip system notification when in-app banners are active and visible.
+  const pushData = (raw.extra ?? raw) as UnifiedPushPayload;
+
+  // MSC4174 validation push: not a notification, ack even while visible.
+  if (isWebPushActivationPayload(pushData)) {
+    try {
+      await acknowledgeWebPushPusher(settings.mx, pushData.app_id, pushData.ack_token);
+    } catch (error) {
+      unifiedPushLog.warn(
+        'notification',
+        'MSC4174 pusher activation failed',
+        error instanceof Error ? error : new Error(String(error))
+      );
+    }
+    return;
+  }
+
   if (document.visibilityState === 'visible' && settings.useInAppNotifications) {
     return;
   }
 
-  const pushData = (raw.extra ?? raw) as UnifiedPushPayload;
   const eventType = pushData?.type as EventType | undefined;
   const userId = isNonEmptyString(pushData?.user_id) ? pushData.user_id.trim() : undefined;
   if (!userId || userId !== settings.mx.getUserId()) {
@@ -1049,6 +1166,17 @@ async function handleUnifiedPushPayload(
 }
 
 const SET_PUSH_MESSAGE_LISTENER_ACTIVE = 'plugin:notifications|set_push_message_listener_active';
+const SET_ENCRYPTED_CONTENT_ALLOWED = 'plugin:notifications|set_encrypted_content_allowed';
+
+/** A push handled with no webview cannot ask the app whether decryption is allowed. */
+export async function setEncryptedContentAllowed(allowed: boolean): Promise<void> {
+  if (!isTauri()) return;
+  try {
+    await invoke(SET_ENCRYPTED_CONTENT_ALLOWED, { allowed });
+  } catch {
+    // Older plugin builds lack the command; the native path then stays closed.
+  }
+}
 
 export async function listenForUnifiedPushMessages(getSettings: () => NotificationSettings) {
   const dispatch = createUnifiedPushMessageListener(

@@ -11,8 +11,17 @@ import {
 const unifiedPushApi = vi.hoisted(() => ({
   isPermissionGranted: vi.fn<() => Promise<boolean>>(),
   requestPermission: vi.fn<() => Promise<string>>(),
-  registerForPushNotifications:
-    vi.fn<(vapid?: string) => Promise<{ deviceToken: string; p256dh?: string; auth?: string }>>(),
+  registerForPushNotifications: vi.fn<
+    (
+      vapid?: string,
+      embeddedGatewayUrl?: string
+    ) => Promise<{
+      deviceToken: string;
+      p256dh?: string;
+      auth?: string;
+      distributor?: string;
+    }>
+  >(),
   unregisterForPushNotifications: vi.fn<() => Promise<void>>(),
   listDistributors: vi.fn<() => Promise<string[]>>(),
   setDistributor: vi.fn<(name: string) => Promise<void>>(),
@@ -73,6 +82,41 @@ describe('registerUnifiedPushTransport', () => {
       status: 'denied',
       permissionState: 'denied',
       error: 'UnifiedPush permission denied',
+    });
+    expect(unifiedPushApi.registerForPushNotifications).not.toHaveBeenCalled();
+  });
+
+  it('registers through the built-in distributor when none is installed', async () => {
+    unifiedPushApi.isPermissionGranted.mockResolvedValue(true);
+    localStorage.removeItem('unifiedpush_distributor');
+    unifiedPushApi.listDistributors.mockResolvedValue([]);
+    unifiedPushApi.registerForPushNotifications.mockResolvedValue({
+      deviceToken: 'https://ntfy.sh/upabc123',
+      distributor: 'embedded-websocket',
+    });
+
+    await expect(registerUnifiedPushTransport(undefined, 'https://ntfy.sh')).resolves.toEqual({
+      status: 'registered',
+      permissionState: 'granted',
+      endpoint: 'https://ntfy.sh/upabc123',
+      distributor: 'embedded-websocket',
+      p256dh: undefined,
+      auth: undefined,
+    });
+    expect(unifiedPushApi.registerForPushNotifications).toHaveBeenCalledWith(
+      undefined,
+      'https://ntfy.sh',
+      undefined
+    );
+  });
+
+  it('still reports missing-distributor when no built-in server is configured', async () => {
+    unifiedPushApi.isPermissionGranted.mockResolvedValue(true);
+    localStorage.removeItem('unifiedpush_distributor');
+    unifiedPushApi.listDistributors.mockResolvedValue([]);
+
+    await expect(registerUnifiedPushTransport(undefined, '   ')).resolves.toMatchObject({
+      status: 'missing-distributor',
     });
     expect(unifiedPushApi.registerForPushNotifications).not.toHaveBeenCalled();
   });

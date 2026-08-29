@@ -43,6 +43,7 @@ import {
 } from '$utils/timeline';
 import { isWindowFocused } from '$utils/dom';
 import { isThreadRelationEvent } from '$utils/room/relations';
+import { isPreprocessingSlidingSyncTimelineReset } from '$client/slidingSyncTimelineReset';
 
 const EVENT_TIMELINE_LOAD_TIMEOUT_MS = 12000;
 
@@ -323,11 +324,14 @@ const useLiveEventArrive = (
     ) => {
       if (eventRoom?.roomId !== room.roomId) return;
 
-      if (data.timeline?.getTimelineSet() !== room.getUnfilteredTimelineSet()) return;
+      const isRoomTimeline = data.timeline?.getTimelineSet() === room.getUnfilteredTimelineSet();
+      const isDisplayedEdit =
+        mEvent.getRelation?.()?.rel_type === RelationType.Replace && !isRoomTimeline;
+      if (!isRoomTimeline && !isDisplayedEdit) return;
 
       onArriveRef.current(
         mEvent,
-        data.liveEvent === true && !toStartOfTimeline && !removed,
+        isRoomTimeline && data.liveEvent === true && !toStartOfTimeline && !removed,
         data.timeline,
         toStartOfTimeline === true && !removed
       );
@@ -349,40 +353,17 @@ const useLiveEventArrive = (
   }, [room]);
 };
 
-const useRelationUpdate = (room: Room, onRelation: () => void) => {
-  const onRelationRef = useRef(onRelation);
-  onRelationRef.current = onRelation;
-
-  const handleTimelineEvent = useCallback(
-    (
-      mEvent: MatrixEvent,
-      eventRoom: Room | undefined,
-      _toStartOfTimeline: boolean | undefined,
-      _removed: boolean,
-      data: IRoomTimelineData
-    ) => {
-      if (eventRoom?.roomId !== room.roomId || data.liveEvent) return;
-      if (mEvent.getRelation()?.rel_type === RelationType.Replace) {
-        onRelationRef.current();
-      }
-    },
-    [room]
-  );
-
-  useMatrixEvent(room, RoomEvent.Timeline, handleTimelineEvent);
-};
-
-const useLiveTimelineRefresh = (room: Room, onRefresh: () => void) => {
+const useLiveTimelineRefresh = (room: Room, onRefresh: (preservePopulated: boolean) => void) => {
   const onRefreshRef = useRef(onRefresh);
   onRefreshRef.current = onRefresh;
 
   useEffect(() => {
     const handleTimelineRefresh: RoomEventHandlerMap[RoomEvent.TimelineRefresh] = (r: Room) => {
       if (r.roomId !== room.roomId) return;
-      onRefreshRef.current();
+      onRefreshRef.current(false);
     };
     const handleTimelineReset: EventTimelineSetHandlerMap[RoomEvent.TimelineReset] = () => {
-      onRefreshRef.current();
+      onRefreshRef.current(isPreprocessingSlidingSyncTimelineReset(unfilteredTimelineSet));
     };
     const unfilteredTimelineSet = room.getUnfilteredTimelineSet();
 
@@ -747,26 +728,30 @@ export function useTimelineSync({
 
   useLiveTimelineRefresh(
     room,
-    useCallback(() => {
-      if (focusedTimelineRef.current || inFlightJumpRef.current) return;
-      applyLiveTimeline(getInitialTimeline(room).linkedTimelines);
-      if (eventId) {
-        void loadEventTimeline(eventId);
-        return;
-      }
-      const wasAtBottom = isAtBottomRef.current;
-      resetAutoScrollPendingRef.current = wasAtBottom;
-      if (wasAtBottom) {
-        scrollToBottom('instant');
-      }
-    }, [applyLiveTimeline, eventId, isAtBottomRef, loadEventTimeline, room, scrollToBottom])
-  );
-
-  useRelationUpdate(
-    room,
-    useCallback(() => {
-      setActiveTimeline((ct) => ({ ...ct }));
-    }, [setActiveTimeline])
+    useCallback(
+      (preservePopulated: boolean) => {
+        if (focusedTimelineRef.current || inFlightJumpRef.current) return;
+        const refreshedTimelines = getInitialTimeline(room).linkedTimelines;
+        if (
+          preservePopulated &&
+          eventsLengthRef.current > 0 &&
+          getTimelinesEventsCount(refreshedTimelines) === 0
+        ) {
+          return;
+        }
+        applyLiveTimeline(refreshedTimelines);
+        if (eventId) {
+          void loadEventTimeline(eventId);
+          return;
+        }
+        const wasAtBottom = isAtBottomRef.current;
+        resetAutoScrollPendingRef.current = wasAtBottom;
+        if (wasAtBottom) {
+          scrollToBottom('instant');
+        }
+      },
+      [applyLiveTimeline, eventId, isAtBottomRef, loadEventTimeline, room, scrollToBottom]
+    )
   );
 
   useThreadUpdate(

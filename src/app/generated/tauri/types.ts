@@ -10,6 +10,13 @@
 
 import type { Channel } from '@tauri-apps/api/core';
 
+export interface DecryptedPush {
+  event_type?: string | null;
+  sender?: string | null;
+  body?: string | null;
+  clear_event: string;
+}
+
 export interface DesktopRuntimeState {
   trayAvailable: boolean;
 }
@@ -19,6 +26,14 @@ export interface DesktopSettings {
   showSystemTrayIcon: boolean;
   useCustomTitleBar: boolean;
   spellcheck: boolean;
+}
+
+export interface EngineInfo {
+  user_id: string;
+  device_id: string;
+  ed25519_key: string;
+  curve25519_key: string;
+  store_path: string;
 }
 
 export interface LoopbackFetchRequest {
@@ -76,6 +91,43 @@ export interface AbortNativeUploadParams {
 
 export interface BuildDiagnosticsArchiveParams {
   frontendLogs?: string | null;
+  [key: string]: unknown;
+}
+
+export interface EngineCloseParams {
+  userId: string;
+  deviceId: string;
+  [key: string]: unknown;
+}
+
+export interface EngineDecryptPushParams {
+  userId: string;
+  deviceId: string;
+  roomId: string;
+  eventJson: string;
+  passphrase?: string | null;
+  [key: string]: unknown;
+}
+
+export interface EngineInvokeParams {
+  userId: string;
+  deviceId: string;
+  method: string;
+  argsJson: string;
+  [key: string]: unknown;
+}
+
+export interface EngineOpenParams {
+  dir?: string | null;
+  passphrase?: string | null;
+  userId: string;
+  deviceId: string;
+  [key: string]: unknown;
+}
+
+export interface EngineWipeParams {
+  userId: string;
+  deviceId: string;
   [key: string]: unknown;
 }
 

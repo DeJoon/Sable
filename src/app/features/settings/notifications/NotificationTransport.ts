@@ -15,6 +15,12 @@ export type PushTransportConfig = {
   unifiedPushGatewayUrl?: string;
   unifiedPushAppID?: string;
   unifiedPushDistributor?: string;
+  /**
+   * Endpoint server for the in-app distributor, e.g. `https://ntfy.sh`. Distinct from
+   * `unifiedPushGatewayUrl`, which is the Matrix push gateway that forwards *to* an
+   * endpoint. Set this to get push with no FCM and no distributor app installed.
+   */
+  unifiedPushEmbeddedServerUrl?: string;
 };
 
 export type PushTransportOverrides = Omit<PushTransportConfig, 'mode'>;
@@ -112,6 +118,8 @@ export function mergePushConfig(
     unifiedPushGatewayUrl: overrides.unifiedPushGatewayUrl ?? defaults.unifiedPushGatewayUrl,
     unifiedPushAppID: overrides.unifiedPushAppID ?? defaults.unifiedPushAppID,
     unifiedPushDistributor: overrides.unifiedPushDistributor ?? defaults.unifiedPushDistributor,
+    unifiedPushEmbeddedServerUrl:
+      overrides.unifiedPushEmbeddedServerUrl ?? defaults.unifiedPushEmbeddedServerUrl,
   };
 }
 

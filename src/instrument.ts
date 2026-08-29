@@ -42,6 +42,9 @@ if (dsn && sentryEnabled) {
     // Do not send PII (IP addresses, user identifiers) to protect privacy
     sendDefaultPii: false,
 
+    // The default 100 only covered a few seconds of this app's HTTP traffic.
+    maxBreadcrumbs: 200,
+
     integrations: [
       // React Router v6 browser tracing integration
       Sentry.reactRouterV6BrowserTracingIntegration({
@@ -160,6 +163,13 @@ if (dsn && sentryEnabled) {
     beforeBreadcrumb(breadcrumb) {
       // Scrub Matrix paths from HTTP breadcrumb data.url (captures full request URLs)
       const bData = breadcrumb.data as Record<string, unknown> | undefined;
+
+      // Successful requests arrive continuously and evict the breadcrumbs that explain
+      // a failure. Keep failures and anything without a status.
+      if (breadcrumb.category === 'fetch' || breadcrumb.category === 'xhr') {
+        const status = bData?.status_code;
+        if (typeof status === 'number' && status < 400) return null;
+      }
       const rawUrl = typeof bData?.url === 'string' ? bData.url : undefined;
       const scrubbedUrl = rawUrl ? scrubMatrixUrl(rawUrl) : undefined;
       const urlChanged = scrubbedUrl !== undefined && scrubbedUrl !== rawUrl;

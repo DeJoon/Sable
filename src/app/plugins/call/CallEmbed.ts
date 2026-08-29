@@ -194,7 +194,7 @@ export class CallEmbed {
     return widget;
   }
 
-  static getIframe(url: string): HTMLIFrameElement {
+  static getIframe(): HTMLIFrameElement {
     const iframe = document.createElement('iframe');
 
     iframe.title = 'Call Embed';
@@ -202,7 +202,6 @@ export class CallEmbed {
       'allow-forms allow-scripts allow-same-origin allow-popups allow-modals allow-downloads';
     iframe.allow =
       'microphone; camera; display-capture; autoplay; clipboard-write; local-network-access;';
-    iframe.src = url;
 
     iframe.style.width = '100%';
     iframe.style.height = '100%';
@@ -220,13 +219,14 @@ export class CallEmbed {
   ) {
     debugLog.info('call', 'Initializing call embed', { roomId: room.roomId });
 
-    const iframe = CallEmbed.getIframe(
-      widget.getCompleteUrl({ currentUserId: mx.getSafeUserId() })
-    );
+    const iframe = CallEmbed.getIframe();
     container.append(iframe);
 
     const callWidgetDriver: WidgetDriver = new CallWidgetDriver(mx, room.roomId);
     const call: ClientWidgetApi = new ClientWidgetApi(widget, iframe, callWidgetDriver);
+
+    // Load after the transport is listening, or a fast iframe's contentLoaded is missed.
+    iframe.src = widget.getCompleteUrl({ currentUserId: mx.getSafeUserId() });
 
     this.mx = mx;
     this.call = call;

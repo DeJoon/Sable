@@ -6,7 +6,8 @@ import { useMatrixClient } from '$hooks/useMatrixClient';
 import { useClientConfig } from '$hooks/useClientConfig';
 import { useSetting } from '$state/hooks/settings';
 import { settingsAtom } from '$state/settings';
-import { enableUnifiedPush } from './UnifiedPushNotifications';
+import { enableUnifiedPush, setEncryptedContentAllowed } from './UnifiedPushNotifications';
+import { healDormantWebPushPusher } from './webPushActivation';
 import { enableNativePush, isNativePushPermissionGranted } from './NativePushNotifications';
 import { isUnifiedPushPermissionGranted } from './UnifiedPushTransport';
 import {
@@ -66,6 +67,11 @@ export function NotificationTransportRuntimeFeature() {
   );
   const [useRichPushPayloads] = useSetting(settingsAtom, 'useRichPushPayloads');
   const [pushNotifyUrlOverride] = useSetting(settingsAtom, 'pushNotifyUrlOverride');
+
+  // The native cold path posts notifications without us.
+  useEffect(() => {
+    void setEncryptedContentAllowed(showMessageContent && showEncryptedMessageContent);
+  }, [showMessageContent, showEncryptedMessageContent]);
 
   const runtimeRef = useRef<NotificationTransportRuntime | undefined>(undefined);
   if (!runtimeRef.current) runtimeRef.current = new NotificationTransportRuntime();
@@ -131,6 +137,9 @@ export function NotificationTransportRuntimeFeature() {
   const clientConfigRef = useRef(clientConfig);
   clientConfigRef.current = clientConfig;
 
+  const pushNotifyUrlOverrideRef = useRef(pushNotifyUrlOverride);
+  pushNotifyUrlOverrideRef.current = pushNotifyUrlOverride;
+
   const lastEndpointRef = useRef<string | null>(null);
   useEffect(() => {
     if (!mx) return undefined;
@@ -147,9 +156,24 @@ export function NotificationTransportRuntimeFeature() {
         if (provider === 'unifiedpush') {
           const result = await enableUnifiedPush(mx, upConfigRef.current);
           lastEndpointRef.current = result.endpoint;
+
+          // An MSC4174 pusher whose validation push arrived while the app was closed
+          // stays dormant forever, and the server never resends. Re-register so a fresh
+          // one is issued now, with the app running to ack it.
+          const appId = upConfigRef.current?.webPushAppID;
+          if (appId) {
+            const healed = await healDormantWebPushPusher(mx, appId, () =>
+              enableUnifiedPush(mx, upConfigRef.current)
+            );
+            if (healed) log.log('Re-registered a dormant MSC4174 pusher');
+          }
         } else if (provider === 'native') {
-          const token = await enableNativePush(mx, clientConfigRef.current);
-          lastEndpointRef.current = token;
+          const native = await enableNativePush(
+            mx,
+            clientConfigRef.current,
+            pushNotifyUrlOverrideRef.current
+          );
+          lastEndpointRef.current = native.pushkey;
         }
       } catch (error) {
         log.warn('Pusher registration failed at startup', error);

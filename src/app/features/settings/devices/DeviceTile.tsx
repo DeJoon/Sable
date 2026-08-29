@@ -13,6 +13,7 @@ import { LogoutDialogOverlay } from '$components/LogoutDialogOverlay';
 import { useSetting } from '$state/hooks/settings';
 import { settingsAtom } from '$state/settings';
 import { toSettingsFocusIdPart } from '$features/settings/settingsLink';
+import { deviceDisplayName } from '$app/utils/platform';
 
 export function DeviceTilePlaceholder() {
   return (
@@ -121,8 +122,8 @@ function DeviceRename({ device, onCancel, onRename, refreshDeviceList }: DeviceR
     const target = evt.target as HTMLFormElement | undefined;
     const nameInput = target?.nameInput as HTMLInputElement | undefined;
     if (!nameInput) return;
-    const deviceName = nameInput.value.trim();
-    if (!deviceName || deviceName === device.display_name) return;
+    let deviceName = nameInput.value.trim() || deviceDisplayName();
+    if (deviceName === device.display_name) return;
 
     rename(deviceName);
   };
@@ -138,8 +139,8 @@ function DeviceRename({ device, onCancel, onRename, refreshDeviceList }: DeviceR
             variant="Secondary"
             radii="300"
             defaultValue={device.display_name}
+            placeholder={deviceDisplayName()}
             autoFocus
-            required
             readOnly={renaming}
           />
         </Box>

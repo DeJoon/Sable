@@ -33,6 +33,14 @@ fn prompt_cef_permission(message: String, tx: std::sync::mpsc::Sender<bool>) {
     });
 }
 
+#[cfg(target_os = "linux")]
+fn is_cef_views() -> bool {
+    cfg!(feature = "cef")
+        && std::env::var_os("SABLE_CEF_VIEWS").is_some()
+        // Only supported on Wayland for now
+        && std::env::var_os("WAYLAND_DISPLAY").is_some()
+}
+
 fn main() {
     // CEF (Chromium) runtime, Linux only. Must run before anything else — CEF
     // re-execs this binary for its subprocesses.
@@ -95,6 +103,11 @@ fn main() {
                     }
                 }
                 args
+            },
+            linux_windowing: if is_cef_views() {
+                tauri_runtime_cef::LinuxWindowing::Wayland
+            } else {
+                tauri_runtime_cef::LinuxWindowing::X11
             },
             ..Default::default()
         });
@@ -220,7 +233,10 @@ fn main() {
         // https://github.com/tauri-apps/tao/issues/1046
         // https://github.com/tauri-apps/tauri/issues/11856
         // https://github.com/tauri-apps/tauri/issues/14251
-        std::env::set_var("GDK_BACKEND", "x11");
+        // Dont' force X11 if explictly opted into CEF Views runtime
+        if !is_cef_views() {
+            std::env::set_var("GDK_BACKEND", "x11");
+        }
 
         // NVIDIA explicit sync is another upstream WebKitGTK/Wayland failure mode. Prefer this lower-cost workaround over WEBKIT_DISABLE_DMABUF_RENDERER=1, but don't stomp an explicit user override.
         // https://github.com/tauri-apps/tauri/issues/10702

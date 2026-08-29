@@ -832,6 +832,27 @@ describe('SlidingSyncManager room subscription coordination', () => {
     );
   });
 
+  it('keeps the space subscription when a space is first hydrated in the sidebar', async () => {
+    const manager = makeManager(makeMockMx());
+    const roomId = '!space:example.com';
+    const internals = manager as unknown as {
+      listsFullyLoaded: boolean;
+      initialListHydrationCompleted: boolean;
+    };
+    internals.listsFullyLoaded = true;
+    internals.initialListHydrationCompleted = true;
+    manager.attach();
+
+    manager.setSpaceSubscriptions([roomId]);
+    fireRoomData(roomId, { initial: true });
+    await Promise.resolve();
+
+    expect(mocks.slidingSyncInstance.useCustomSubscription).toHaveBeenLastCalledWith(
+      roomId,
+      'space'
+    );
+  });
+
   it('hydrates sidebar state once for rooms first seen after startup', async () => {
     const manager = makeManager(makeMockMx());
     const roomId = '!new:example.com';

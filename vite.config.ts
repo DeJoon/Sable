@@ -73,11 +73,14 @@ const isReleaseTag = (() => {
 
 const baseProductName = typeof appConfig.productName === 'string' ? appConfig.productName : 'Sable';
 
+const callEmbeddedDir = 'node_modules/@sableclient/sable-call-embedded/dist';
+
 const copyFiles = {
   targets: [
     {
-      src: 'node_modules/@sableclient/sable-call-embedded/dist/*',
+      src: callEmbeddedDir,
       dest: 'public/element-call',
+      rename: { stripBase: callEmbeddedDir.split('/').length },
     },
     {
       src: 'node_modules/pdfjs-dist/build/pdf.worker.min.mjs',
@@ -96,18 +99,22 @@ const copyFiles = {
     {
       src: 'public/res/logo-maskable',
       dest: 'public/',
+      rename: { stripBase: 2 },
     },
     {
       src: 'public/res/logo',
       dest: 'public/',
+      rename: { stripBase: 2 },
     },
     {
       src: 'public/res/svg',
       dest: 'public/',
+      rename: { stripBase: 2 },
     },
     {
       src: 'public/locales',
       dest: 'public/',
+      rename: { stripBase: 1 },
     },
     {
       src: 'wrangler.json',

@@ -93,7 +93,7 @@ type VerificationStartProps = {
 };
 function AutoVerificationStart({ onStart }: VerificationStartProps) {
   useEffect(() => {
-    onStart();
+    onStart().catch(() => undefined);
   }, [onStart]);
 
   return (
@@ -226,7 +226,7 @@ export function DeviceVerification({ request, onExit }: DeviceVerificationProps)
 
   const handleCancel = useCallback(() => {
     if (request.phase !== VerificationPhase.Done && request.phase !== VerificationPhase.Cancelled) {
-      request.cancel();
+      request.cancel().catch(() => undefined);
     }
     onExit();
   }, [request, onExit]);

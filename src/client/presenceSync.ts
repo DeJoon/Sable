@@ -1,13 +1,5 @@
-import type { CryptoBackend, IDeviceLists, IToDeviceEvent, MatrixClient } from '$types/matrix-sdk';
-import {
-  ClientEvent,
-  EventType,
-  Filter,
-  Method,
-  processToDeviceMessages,
-  SetPresence,
-  User,
-} from '$types/matrix-sdk';
+import type { MatrixClient } from '$types/matrix-sdk';
+import { ClientEvent, EventType, Filter, Method, SetPresence, User } from '$types/matrix-sdk';
 import { createDebugLogger } from '$utils/debugLogger';
 
 const debugLog = createDebugLogger('presenceSync');
@@ -15,11 +7,6 @@ const debugLog = createDebugLogger('presenceSync');
 type PresenceSyncResponse = {
   next_batch?: string;
   presence?: { events?: unknown[] };
-  to_device?: { events?: IToDeviceEvent[] };
-  device_lists?: IDeviceLists;
-  device_one_time_keys_count?: Record<string, number>;
-  device_unused_fallback_key_types?: string[];
-  'org.matrix.msc2732.device_unused_fallback_key_types'?: string[];
 };
 
 export class PresenceSyncManager {
@@ -74,28 +61,6 @@ export class PresenceSyncManager {
     if (this.nextPollTimer !== undefined) clearTimeout(this.nextPollTimer);
     this.nextPollTimer = undefined;
     this.abortController?.abort();
-  }
-
-  private async processCrypto(response: PresenceSyncResponse): Promise<void> {
-    const crypto = this.mx.getCrypto() as CryptoBackend | undefined;
-    if (!crypto) return;
-
-    const toDeviceEvents = response.to_device?.events ?? [];
-    if (toDeviceEvents.length > 0) {
-      const processedEvents = await crypto.preprocessToDeviceMessages(toDeviceEvents);
-      processToDeviceMessages(processedEvents, this.mx);
-    }
-
-    if (response.device_lists) {
-      await crypto.processDeviceLists(response.device_lists);
-    }
-
-    await crypto.processKeyCounts(
-      response.device_one_time_keys_count,
-      response.device_unused_fallback_key_types ??
-        response['org.matrix.msc2732.device_unused_fallback_key_types']
-    );
-    crypto.onSyncCompleted({ nextSyncToken: response.next_batch });
   }
 
   private processPresence(response: PresenceSyncResponse): void {
@@ -155,14 +120,11 @@ export class PresenceSyncManager {
           { abortSignal: signal }
         );
 
-        await this.processCrypto(response);
         this.processPresence(response);
         this.syncToken = response.next_batch;
 
         debugLog.info('sync', 'Presence sync response processed', {
           presenceEvents: response.presence?.events?.length ?? 0,
-          toDeviceEvents: response.to_device?.events?.length ?? 0,
-          hasKeyCounts: response.device_one_time_keys_count !== undefined,
         });
       } catch (err) {
         if (!signal.aborted && !this.disposed) {

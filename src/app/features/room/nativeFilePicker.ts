@@ -82,7 +82,7 @@ const pickAndroidFiles = async (
   pickerMode: NativePickerMode,
   onFileFailure?: NativeFileFailureHandler
 ): Promise<File[]> => {
-  const { AndroidFs } = await import('tauri-plugin-android-fs-api');
+  const AndroidFs = await import('tauri-plugin-android-fs-api');
   const uris = await AndroidFs.showOpenFilePicker({
     pickerType: pickerMode === 'media' ? 'Gallery' : 'FilePicker',
     mimeTypes: pickerMode === 'media' ? MEDIA_MIME_TYPES : [],

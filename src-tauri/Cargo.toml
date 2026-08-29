@@ -44,6 +44,7 @@ percent-encoding = "2"
 reqwest = { version = "0.12", default-features = false, features = ["stream"] }
 async-stream = "0.3"
 base64 = "0.23"
+zeroize = "1"
 tokio-util = { version = "0.7", features = ["codec"] }
 futures-util = "0.3"
 regex = "1"
@@ -58,6 +59,23 @@ tauri = { version = "2.11.5", default-features = false, features = [
   "dbus",
   "image-png",
 ] }
+
+# Rust Matrix crypto engine. Optional so regular builds don't pay the
+# matrix-rust-sdk compile cost.
+matrix-sdk = { version = "0.18", default-features = false, features = [
+  "e2e-encryption",
+  "sqlite",
+], optional = true }
+# `qrcode` is off by default upstream; Sable already supports QR device
+# verification, so the engine needs it for parity with the wasm backend.
+matrix-sdk-crypto = { version = "0.18", features = [
+  "qrcode",
+  "experimental-push-secrets",
+], optional = true }
+# `bundled` compiles SQLite from source. Android's NDK ships no libsqlite3 to link
+# against at any API level, so without this the aarch64 build fails at link time.
+matrix-sdk-sqlite = { version = "0.18", features = ["crypto-store", "bundled"], optional = true }
+http = { version = "1", optional = true }
 
 tauri-plugin-log = "2.9.0"
 tauri-plugin-opener = "2.5.4"
@@ -91,12 +109,12 @@ windows = { version = "0.62", features = [
 tauri-plugin-single-instance = { version = "2.4.3", features = ["deep-link"] }
 
 [target.'cfg(any(windows, target_os = "linux"))'.dependencies]
-tauri-plugin-notifications = { git = "https://github.com/SableClient/tauri-plugin-notifications.git", rev = "301e4ac43970525764eb2f0c787884129db2847f" }
+tauri-plugin-notifications = { git = "https://github.com/SableClient/tauri-plugin-notifications.git", rev = "302944f44e0a876b39a37e4f08741379202bbdd4" }
 
 # default-features = false drops notify-rust so macOS uses the native
 # UNUserNotificationCenter backend (needs a signed .app to deliver).
 [target.'cfg(target_os = "macos")'.dependencies]
-tauri-plugin-notifications = { git = "https://github.com/SableClient/tauri-plugin-notifications.git", rev = "301e4ac43970525764eb2f0c787884129db2847f", default-features = false }
+tauri-plugin-notifications = { git = "https://github.com/SableClient/tauri-plugin-notifications.git", rev = "302944f44e0a876b39a37e4f08741379202bbdd4", default-features = false }
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 tauri-plugin-updater = { version = "2", optional = true }
@@ -114,13 +132,13 @@ webkit2gtk = { version = "2.0", optional = true, features = ["v2_34"] }
 # Fork of tauri's unreleased feat/cef branch, ported onto published crates.
 # https://github.com/SableClient/tauri-runtime-cef
 [target.'cfg(target_os = "linux")'.dependencies]
-tauri-runtime-cef = { git = "https://github.com/SableClient/tauri-runtime-cef", rev = "4e9d7a4fbdf8f246c06a141a87618d8557381c27", optional = true }
+tauri-runtime-cef = { git = "https://github.com/SableClient/tauri-runtime-cef", rev = "eace83edf055acc17e811b2bc75d4b6eadf39670", optional = true }
 cef = { version = "=150.2.1", optional = true }
 libloading = "0.9"
 zbus = "5"
 
 [target.'cfg(any(target_os = "android", target_os = "ios"))'.dependencies]
-tauri-plugin-notifications = { git = "https://github.com/SableClient/tauri-plugin-notifications.git", rev = "301e4ac43970525764eb2f0c787884129db2847f", features = [
+tauri-plugin-notifications = { git = "https://github.com/SableClient/tauri-plugin-notifications.git", rev = "302944f44e0a876b39a37e4f08741379202bbdd4", features = [
   "push-notifications",
 ] }
 tauri-plugin-edge-to-edge = { git = "https://github.com/SableClient/tauri-plugin-edge-to-edge.git", rev = "33c6116c27be28c06df5a9d02231ecc5fdeb93c5" }
@@ -178,7 +196,7 @@ tauri-plugin-android-fs = { version = "=29.0.0", features = ["legacy-storage-per
 jni = "0.22"
 
 [features]
-default = ["wry", "updater"]
+default = ["wry", "updater", "matrix-crypto"]
 custom-protocol = ["tauri/custom-protocol"]
 wry = ["tauri/wry", "dep:webkit2gtk"]
 # Tauri auto-updater. Disable with --no-default-features --features wry,cef.
@@ -188,6 +206,7 @@ cef = ["dep:tauri-runtime-cef", "dep:cef"]
 # CrabNebula devtools. Off by default: its aggregator retains every metadata record for the
 # session, which costs hundreds of MB per minute once tauri-plugin-log feeds it.
 devtools = ["dep:tauri-plugin-devtools"]
+matrix-crypto = ["dep:matrix-sdk", "dep:matrix-sdk-crypto", "dep:matrix-sdk-sqlite", "dep:http"]
 [patch.crates-io]
 tauri-typegen = { git = "https://github.com/SableClient/tauri-typegen", branch = "fix/nondeterministic-generation-cache" }
 
