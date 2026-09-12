@@ -53,6 +53,8 @@ const POLL_DEADLINE_MARGIN_MS = 20_000;
 // The SDK's to_device extension takes 100 events per response, so a backlog needs several.
 const MAX_PUSH_DRAIN_POLLS = 5;
 
+const PUSH_DRAIN_TIMEOUT_MS = 120_000;
+
 const ACTIVE_ROOM_SUBSCRIPTION_KEY = 'active_room';
 const CALL_ROOM_SUBSCRIPTION_KEY = 'call_room';
 const SIDEBAR_ROOM_SUBSCRIPTION_KEY = 'sidebar_room';
@@ -716,7 +718,13 @@ export class SlidingSyncManager {
 
   private pushDrainPollsLeft = 0;
 
+  private pushDrainSawEvents = false;
+
+  private pushDrainTimer: ReturnType<typeof setTimeout> | undefined;
+
   private readonly resumeWaiters = new Set<() => void>();
+
+  private readonly transportStateListeners = new Set<() => void>();
 
   /** Span covering the period from attach() to the first successful complete cycle. */
   private initialSyncSpan: ReturnType<typeof Sentry.startInactiveSpan> | null = null;
@@ -1019,13 +1027,13 @@ export class SlidingSyncManager {
    * instead.
    */
   public pause(): void {
-    this.pushDrainPollsLeft = 0;
     if (this.paused || this.disposed) return;
     this.paused = true;
     globalThis.clearTimeout(this.pollWatchdogTimer);
     this.pollWatchdogTimer = undefined;
     this.slidingSync.resend();
     debugLog.info('sync', 'Sliding sync paused');
+    this.notifyTransportState();
   }
 
   private liftPause(): void {
@@ -1035,32 +1043,61 @@ export class SlidingSyncManager {
   }
 
   public resume(): void {
-    this.pushDrainPollsLeft = 0;
     if (!this.paused) return;
     this.liftPause();
     debugLog.info('sync', 'Sliding sync resumed');
+    this.notifyTransportState();
   }
 
-  /** Poll on while backgrounded, then park: to-device only arrives over a live `/sync`. */
-  public resumeForPush(): boolean {
-    if (this.disposed || !this.paused) return false;
+  public requestPushDrain(): void {
+    if (this.disposed || this.pushDrainPollsLeft === MAX_PUSH_DRAIN_POLLS) return;
     this.pushDrainPollsLeft = MAX_PUSH_DRAIN_POLLS;
-    this.liftPause();
-    debugLog.info('sync', 'Sliding sync resumed to drain to-device after a push');
-    return true;
+    this.pushDrainSawEvents = false;
+    if (this.pushDrainTimer !== undefined) clearTimeout(this.pushDrainTimer);
+    this.pushDrainTimer = setTimeout(() => this.endPushDrain(), PUSH_DRAIN_TIMEOUT_MS);
+    debugLog.info('sync', 'Sliding sync asked to drain to-device after a push');
+    this.notifyTransportState();
+  }
+
+  private endPushDrain(): void {
+    if (this.pushDrainTimer !== undefined) {
+      clearTimeout(this.pushDrainTimer);
+      this.pushDrainTimer = undefined;
+    }
+    if (this.pushDrainPollsLeft === 0) return;
+    this.pushDrainPollsLeft = 0;
+    this.pushDrainSawEvents = false;
+    this.notifyTransportState();
   }
 
   private settlePushDrain(resp: MSC3575SlidingSyncResponse): void {
     if (this.pushDrainPollsLeft === 0) return;
     const toDevice = resp.extensions?.to_device as { events?: unknown[] } | undefined;
-    const drained = (toDevice?.events?.length ?? 0) === 0;
+    if ((toDevice?.events?.length ?? 0) > 0) {
+      this.pushDrainSawEvents = true;
+      return;
+    }
     this.pushDrainPollsLeft -= 1;
-    if (!drained && this.pushDrainPollsLeft > 0) return;
-    this.pause();
+    if (this.pushDrainSawEvents || this.pushDrainPollsLeft === 0) this.endPushDrain();
   }
 
   public isPaused(): boolean {
     return this.paused;
+  }
+
+  public isDrainingPush(): boolean {
+    return this.pushDrainPollsLeft > 0;
+  }
+
+  public onTransportStateChange(listener: () => void): () => void {
+    this.transportStateListeners.add(listener);
+    return () => {
+      this.transportStateListeners.delete(listener);
+    };
+  }
+
+  private notifyTransportState(): void {
+    this.transportStateListeners.forEach((listener) => listener());
   }
 
   /** Resolves on the next resume(), or immediately when not paused. */
@@ -1107,6 +1144,12 @@ export class SlidingSyncManager {
     this.disposed = true;
     this.paused = false;
     this.pushDrainPollsLeft = 0;
+    this.pushDrainSawEvents = false;
+    if (this.pushDrainTimer !== undefined) {
+      clearTimeout(this.pushDrainTimer);
+      this.pushDrainTimer = undefined;
+    }
+    this.transportStateListeners.clear();
     this.releaseResumeWaiters();
     globalThis.clearTimeout(this.pollWatchdogTimer);
     this.pollWatchdogTimer = undefined;

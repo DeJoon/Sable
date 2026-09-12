@@ -32,23 +32,23 @@ pub(super) struct KeysClaimBody<'a> {
 pub(super) fn keys_claim_body(
     timeout: &Option<std::time::Duration>,
     one_time_keys: &Value,
-) -> String {
+) -> Result<String, String> {
     serde_json::to_string(&KeysClaimBody {
         timeout,
         one_time_keys,
     })
-    .unwrap_or_default()
+    .map_err(|e| format!("serializing a /keys/claim body failed: {e}"))
 }
 
 pub(super) fn keys_query_body(
     timeout: &Option<std::time::Duration>,
     device_keys: &Value,
-) -> String {
+) -> Result<String, String> {
     serde_json::to_string(&KeysQueryBody {
         timeout,
         device_keys,
     })
-    .unwrap_or_default()
+    .map_err(|e| format!("serializing a /keys/query body failed: {e}"))
 }
 
 /// `device_keys` is omitted when absent; an explicit `null` is not the same thing.
@@ -93,12 +93,12 @@ pub async fn outgoing_requests(machine: &OlmMachine) -> Result<Value, String> {
                     AnyOutgoingRequest::KeysQuery(req) => json!({
                         "type": request_type::KEYS_QUERY,
                         "className": "KeysQueryRequest",
-                        "body": keys_query_body(&req.timeout, &json!(req.device_keys)),
+                        "body": keys_query_body(&req.timeout, &json!(req.device_keys))?,
                     }),
                     AnyOutgoingRequest::KeysClaim(req) => json!({
                         "type": request_type::KEYS_CLAIM,
                         "className": "KeysClaimRequest",
-                        "body": keys_claim_body(&req.timeout, &json!(req.one_time_keys)),
+                        "body": keys_claim_body(&req.timeout, &json!(req.one_time_keys))?,
                     }),
                     AnyOutgoingRequest::ToDeviceRequest(req) => json!({
                         "type": request_type::TO_DEVICE,
@@ -122,9 +122,9 @@ pub async fn outgoing_requests(machine: &OlmMachine) -> Result<Value, String> {
                     }),
                 };
                 entry["id"] = Value::String(id);
-                entry
+                Ok(entry)
             })
-            .collect(),
+            .collect::<Result<Vec<_>, String>>()?,
     ))
 }
 

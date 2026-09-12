@@ -59,11 +59,14 @@ pub fn spawn(
             let (app, account) = (app.clone(), account.clone());
             async move {
                 while let Some(update) = room_keys.next().await {
-                    // Lagging drops updates rather than ending the stream; js-sdk
-                    // recovers on the next key or a retry, so keep listening.
-                    if let Ok(keys) = update {
-                        let payload = Value::Array(keys.iter().map(room_key_json).collect());
-                        emit(app.clone(), ROOM_KEYS_RECEIVED, account.clone(), payload);
+                    match update {
+                        Ok(keys) => {
+                            let payload = Value::Array(keys.iter().map(room_key_json).collect());
+                            emit(app.clone(), ROOM_KEYS_RECEIVED, account.clone(), payload);
+                        }
+                        Err(error) => {
+                            log::warn!("room-key stream lagged, {error}; some events may stay undecryptable until restart");
+                        }
                     }
                 }
             }

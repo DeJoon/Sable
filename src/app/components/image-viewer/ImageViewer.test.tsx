@@ -3,7 +3,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import FileSaver from 'file-saver';
 import { ImageViewer } from './ImageViewer';
-import { showToast } from '$state/toast';
+import { showErrorToast } from '$state/toast';
 import type { IImageInfo } from '$types/matrix/common';
 
 const downloadMedia = vi.fn<(src: string) => Promise<Blob>>();
@@ -11,8 +11,12 @@ const saveMediaToGallery =
   vi.fn<(input: Blob | string, filename: string, mimeType: string) => Promise<void>>();
 const toastMocks = vi.hoisted(() => ({
   showToast: vi.fn<(text: string, durationMs?: number) => void>(),
+  showErrorToast: vi.fn<(text: string, durationMs?: number) => void>(),
 }));
-vi.mock('$state/toast', () => ({ showToast: toastMocks.showToast }));
+vi.mock('$state/toast', () => ({
+  showToast: toastMocks.showToast,
+  showErrorToast: toastMocks.showErrorToast,
+}));
 const platformMocks = vi.hoisted(() => ({
   isAndroidTauri: vi.fn<() => boolean>(() => false),
   iosApp: vi.fn<() => boolean>(() => false),
@@ -229,14 +233,14 @@ describe('ImageViewer', () => {
   it('shows an error toast when downloading media fails', async () => {
     const error = new Error('network unavailable');
     downloadMedia.mockRejectedValue(error);
-    vi.mocked(showToast).mockClear();
+    vi.mocked(showErrorToast).mockClear();
 
     renderViewer();
 
     fireEvent.click(screen.getByText('Download'));
 
     await waitFor(() => {
-      expect(showToast).toHaveBeenCalledWith('Failed to download file: network unavailable');
+      expect(showErrorToast).toHaveBeenCalledWith('Failed to download file: network unavailable');
     });
   });
 

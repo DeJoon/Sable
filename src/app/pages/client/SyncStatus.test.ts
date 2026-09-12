@@ -80,6 +80,26 @@ describe('useStickyDisconnected (hysteresis)', () => {
     expect(result.current).toBeNull();
   });
 
+  it('waits longer before the banner when the app has just been resumed', () => {
+    const { result, rerender } = renderHook(({ state }) => useStickyDisconnected(state), {
+      initialProps: { state: SyncState.Syncing as SyncState | null },
+    });
+    act(() => {
+      document.dispatchEvent(new Event('visibilitychange'));
+    });
+
+    rerender({ state: SyncState.Error });
+    act(() => {
+      vi.advanceTimersByTime(3000);
+    });
+    expect(result.current).toBeNull();
+
+    act(() => {
+      vi.advanceTimersByTime(6000);
+    });
+    expect(result.current).toBe(SyncState.Error);
+  });
+
   it('shows banner after degraded for >2s', () => {
     const { result, rerender } = renderHook(({ state }) => useStickyDisconnected(state), {
       initialProps: { state: SyncState.Syncing as SyncState | null },

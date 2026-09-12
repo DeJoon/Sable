@@ -208,6 +208,23 @@ export const useDeviceVerificationStatus = (
   return status;
 };
 
+export const useVerifiedDeviceCount = (
+  crypto: CryptoApi | undefined,
+  userId: string,
+  devices: string[]
+): number | undefined => {
+  useInvalidateDeviceVerification(crypto);
+
+  return useQueries({
+    queries: devices.map((deviceId) => deviceVerificationQuery(crypto, userId, deviceId)),
+    combine: (results) => {
+      if (!crypto) return 0;
+      if (results.some((result) => result.isPending)) return undefined;
+      return results.filter((result) => result.data === true).length;
+    },
+  });
+};
+
 export const useUnverifiedDeviceCount = (
   crypto: CryptoApi | undefined,
   userId: string,

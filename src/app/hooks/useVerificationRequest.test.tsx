@@ -1,7 +1,7 @@
 import { renderHook } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
-import { VerifierEvent } from '$types/matrix-sdk';
-import { useVerifierShowSas } from './useVerificationRequest';
+import { VerificationPhase, VerifierEvent } from '$types/matrix-sdk';
+import { useVerificationRequestPhase, useVerifierShowSas } from './useVerificationRequest';
 
 describe('useVerifierShowSas', () => {
   it('publishes SAS callbacks that were ready before the listener subscribed', () => {
@@ -31,5 +31,27 @@ describe('useVerifierShowSas', () => {
 
     unmount();
     expect(removeListener).toHaveBeenCalledWith(VerifierEvent.ShowSas, onCallback);
+  });
+});
+
+describe('useVerificationRequestPhase', () => {
+  it('reports the new request phase when the request is swapped out', () => {
+    const stub = (phase: VerificationPhase) => ({
+      phase,
+      on: vi.fn<() => void>(),
+      removeListener: vi.fn<() => void>(),
+    });
+    const cancelled = stub(VerificationPhase.Cancelled);
+    const fresh = stub(VerificationPhase.Requested);
+
+    const { result, rerender } = renderHook(
+      ({ request }) => useVerificationRequestPhase(request as never),
+      { initialProps: { request: cancelled } }
+    );
+
+    expect(result.current).toBe(VerificationPhase.Cancelled);
+
+    rerender({ request: fresh });
+    expect(result.current).toBe(VerificationPhase.Requested);
   });
 });

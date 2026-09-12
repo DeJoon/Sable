@@ -95,7 +95,7 @@ export const createSessionTokenRefresher = (
         })
         .catch((error: unknown) => {
           tokenRefresherPromise = undefined;
-          throw error;
+          throw new Error('Unable to load authentication metadata', { cause: error });
         });
     }
     return tokenRefresherPromise;
@@ -104,7 +104,6 @@ export const createSessionTokenRefresher = (
   return {
     tokenRefreshFunction: async (refreshToken) => {
       const refresh = withRefreshQueue(session.userId, async () => {
-        const tokenRefresher = await getTokenRefresher();
         const refreshWithCurrentState = async () => {
           // Another tab may have rotated the token; reusing a consumed one revokes the session.
           const storedSession = getStoredSession(session.userId);
@@ -118,6 +117,7 @@ export const createSessionTokenRefresher = (
               refreshToken: latestRefreshToken,
             };
           }
+          const tokenRefresher = await getTokenRefresher();
           const tokens = await tokenRefresher.tokenRefreshFunction(latestRefreshToken);
           return {
             ...tokens,

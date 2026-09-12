@@ -121,3 +121,13 @@ export const EditorToolbarBase = style({
 export const EditorToolbar = style({
   padding: config.space.S100,
 });
+
+// Gboard recomposes the text node before the caret even inside a
+// contenteditable=false pill, and Chrome appends each update after it.
+export const AtomLabel = style({
+  selectors: {
+    '&::before': {
+      content: 'attr(data-label)',
+    },
+  },
+});

@@ -39,7 +39,9 @@ describe('atom node views', () => {
 
     expect(pill).toHaveAttribute('contenteditable', 'false');
     expect(pill.className).not.toBe('');
-    expect(pill).toHaveTextContent('bob');
+    expect(pill).toHaveAttribute('data-label', '@bob');
+    // Gboard recomposes any text node before the caret, so the label must not be one.
+    expect(pill.textContent).toBe('');
   });
 
   it('renders an mxc emoticon as an image via the render context', () => {
@@ -72,7 +74,10 @@ describe('atom node views', () => {
     );
 
     expect(container.querySelector('img[alt="party"]')).toBeNull();
-    expect(container.querySelector('.ProseMirror')).toHaveTextContent('🎉');
+    expect(container.querySelector('.ProseMirror [data-label]')).toHaveAttribute(
+      'data-label',
+      '🎉'
+    );
   });
 
   it('drops the command’s active styling once text precedes it', () => {
@@ -88,7 +93,7 @@ describe('atom node views', () => {
     act(() => controller.setDocument(paragraph({ text: 'hi ' }, command)));
 
     const pill = container.querySelector('.ProseMirror > p > span') as HTMLElement;
-    expect(pill).toHaveTextContent('/shrug');
+    expect(pill).toHaveAttribute('data-label', '/shrug');
     expect(pill.className).not.toBe(activeClass);
   });
 
@@ -118,7 +123,8 @@ describe('atom node views', () => {
     const pill = container.querySelector('.ProseMirror > p > span')!;
 
     expect(pill).toHaveAttribute('contenteditable', 'false');
-    expect(pill).toHaveTextContent('/shrug');
+    expect(pill).toHaveAttribute('data-label', '/shrug');
+    expect(pill.textContent).toBe('');
   });
 });
 

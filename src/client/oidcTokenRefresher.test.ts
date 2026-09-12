@@ -102,6 +102,19 @@ describe('createSessionTokenRefresher', () => {
     });
   });
 
+  it('retries metadata discovery after a temporary failure', async () => {
+    getAuthMetadata.mockRejectedValueOnce(new Error('unavailable'));
+    mocks.refresh.mockResolvedValue({ accessToken: 'new-access', refreshToken: 'new-refresh' });
+    const refresher = createSessionTokenRefresher(session, mx)!;
+    await expect(refresher.tokenRefreshFunction('old-refresh')).rejects.toThrow(
+      'Unable to load authentication metadata'
+    );
+    await expect(refresher.tokenRefreshFunction('old-refresh')).resolves.toMatchObject({
+      accessToken: 'new-access',
+    });
+    expect(getAuthMetadata).toHaveBeenCalledTimes(2);
+  });
+
   it('uses the current stored token after waiting for the cross-tab refresh lock', async () => {
     const request = vi.fn<(name: string, callback: () => Promise<unknown>) => Promise<unknown>>(
       async (_name, callback) => {
@@ -127,5 +140,6 @@ describe('createSessionTokenRefresher', () => {
     });
     expect(request).toHaveBeenCalledWith('sable-oidc-refresh', expect.any(Function));
     expect(mocks.refresh).not.toHaveBeenCalled();
+    expect(getAuthMetadata).not.toHaveBeenCalled();
   });
 });

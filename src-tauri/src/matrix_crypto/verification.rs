@@ -77,7 +77,7 @@ async fn identity(
 ) -> Result<UserIdentity, String> {
     let user = user_arg(args, method)?;
     machine
-        .get_identity(&user, None)
+        .get_identity(&user, Some(super::devices::IDENTITY_QUERY_WAIT))
         .await
         .map_err(|e| format!("{method}: cannot load the identity of {user}: {e}"))?
         .ok_or_else(|| format!("{method}: no cross-signing identity for {user}"))
@@ -466,25 +466,12 @@ pub async fn invoke(
                 .map(verification_state)
                 .unwrap_or(Value::Null))
         }
-        "verificationRequest.accept" => {
-            request(machine, args, method).and_then(|request| {
-                match args.get("methods").and_then(Value::as_array) {
-                    Some(codes) => {
-                        let methods = codes
-                            .iter()
-                            .filter_map(Value::as_u64)
-                            .map(|code| {
-                                method_from_code(code).ok_or_else(|| {
-                                    format!("{method}: unknown verification method {code}")
-                                })
-                            })
-                            .collect::<Result<Vec<_>, _>>()?;
-                        Ok(optional_outgoing(request.accept_with_methods(methods)))
-                    }
-                    None => Ok(optional_outgoing(request.accept())),
-                }
+        "verificationRequest.accept" => request(machine, args, method).and_then(|request| {
+            Ok(match methods_arg(args, method)? {
+                Some(methods) => optional_outgoing(request.accept_with_methods(methods)),
+                None => optional_outgoing(request.accept()),
             })
-        }
+        }),
         "verificationRequest.cancel" => {
             request(machine, args, method).map(|request| optional_outgoing(request.cancel()))
         }

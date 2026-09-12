@@ -214,9 +214,22 @@ class DebugLoggerService {
       message,
       data,
     };
-    // Omit arbitrary data before serialization; it may be circular or contain BigInts.
+    // Arbitrary data may be circular or contain BigInts, so only primitives survive, and
+    // they go through the sanitizer with the rest of the entry.
+    const primitives: Record<string, string | number | boolean> = {};
+    if (data && typeof data === 'object' && !(data instanceof Error)) {
+      Object.entries(data as Record<string, unknown>).forEach(([key, value]) => {
+        if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+          primitives[key] = value;
+        } else if (value instanceof Error) {
+          primitives[key] = value.message;
+        }
+      });
+    }
     const sanitized = sanitizeDiagnosticsLogs(
-      JSON.stringify({ logs: [{ ...rawEntry, data: undefined }] })
+      JSON.stringify({
+        logs: [{ ...rawEntry, data: Object.keys(primitives).length > 0 ? primitives : undefined }],
+      })
     );
     if (!sanitized) return;
     const parsed = JSON.parse(sanitized) as { logs?: LogEntry[] };

@@ -19,10 +19,12 @@ fn device_id(args: &Value, method: &str) -> Result<OwnedDeviceId, String> {
     Ok(str_arg(args, method, "deviceId")?.into())
 }
 
+pub(super) const IDENTITY_QUERY_WAIT: Duration = Duration::from_secs(1);
+
 fn timeout(args: &Value) -> Option<Duration> {
     args.get("timeoutSecs")
         .and_then(Value::as_f64)
-        .map(Duration::from_secs_f64)
+        .and_then(|secs| Duration::try_from_secs_f64(secs).ok())
 }
 
 fn signatures_json(signatures: &Signatures, method: &str) -> Result<Value, String> {
@@ -139,7 +141,7 @@ async fn identity_for(
 ) -> Result<Option<UserIdentity>, String> {
     let user = user_id(args, method, "userId")?;
     machine
-        .get_identity(&user, timeout(args))
+        .get_identity(&user, timeout(args).or(Some(IDENTITY_QUERY_WAIT)))
         .await
         .map_err(|e| format!("{method} failed: {e}"))
 }
@@ -189,13 +191,13 @@ fn query_keys_for_users(machine: &OlmMachine, args: &Value, method: &str) -> Res
         "body": super::requests::keys_query_body(
             &request.timeout,
             &json!(request.device_keys),
-        ),
+        )?,
     }))
 }
 
 async fn verify_device(machine: &OlmMachine, args: &Value, method: &str) -> Result<Value, String> {
     let Some(device) = device_for(machine, args, method).await? else {
-        return Ok(Value::Null);
+        return Err(format!("{method}: unknown device"));
     };
     let request = device
         .verify()
@@ -214,7 +216,7 @@ async fn set_local_trust(
         .and_then(Value::as_i64)
         .ok_or_else(|| format!("{method}: missing numeric argument `trustState`"))?;
     let Some(device) = device_for(machine, args, method).await? else {
-        return Ok(Value::Null);
+        return Err(format!("{method}: unknown device"));
     };
     device
         .set_local_trust(LocalTrust::from(trust))
@@ -326,4 +328,57 @@ pub async fn invoke(
 
         _ => return None,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{invoke, timeout};
+    use matrix_sdk_crypto::OlmMachine;
+    use serde_json::json;
+    use std::time::Duration;
+
+    async fn machine() -> OlmMachine {
+        let user: &matrix_sdk::ruma::UserId = "@me:example.org".try_into().unwrap();
+        OlmMachine::new(user, "MYDEVICE".into()).await
+    }
+
+    #[tokio::test]
+    async fn verifying_an_unknown_device_is_an_error() {
+        let machine = machine().await;
+        let args = json!({ "userId": "@me:example.org", "deviceId": "NOSUCHDEVICE" });
+
+        let result = invoke(&machine, "device.verify", &args).await;
+
+        assert!(matches!(result, Some(Err(_))));
+    }
+
+    #[tokio::test]
+    async fn trusting_an_unknown_device_is_an_error() {
+        let machine = machine().await;
+        let args = json!({
+            "userId": "@me:example.org",
+            "deviceId": "NOSUCHDEVICE",
+            "trustState": 1,
+        });
+
+        let result = invoke(&machine, "device.setLocalTrust", &args).await;
+
+        assert!(matches!(result, Some(Err(_))));
+    }
+
+    #[test]
+    fn an_unusable_timeout_is_ignored_rather_than_panicking() {
+        for secs in [-1.0, f64::NAN, f64::INFINITY, 1e300] {
+            assert_eq!(timeout(&json!({ "timeoutSecs": secs })), None);
+        }
+    }
+
+    #[test]
+    fn a_usable_timeout_is_kept() {
+        assert_eq!(
+            timeout(&json!({ "timeoutSecs": 10.0 })),
+            Some(Duration::from_secs(10))
+        );
+        assert_eq!(timeout(&json!({})), None);
+    }
 }

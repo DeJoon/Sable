@@ -3,12 +3,10 @@ import { useAtom } from 'jotai';
 import { useStore } from 'jotai/react';
 import { isTauri } from '@tauri-apps/api/core';
 import { type as osType } from '@tauri-apps/plugin-os';
-import { SyncState } from '$types/matrix-sdk';
 import { shareInboxClear, shareInboxDrain, shareInboxRead } from '$generated/tauri/commands';
 import { pendingShareAtom } from '$state/shareTarget';
 import { useMatrixClient } from '$hooks/useMatrixClient';
 import { useRoomNavigate } from '$hooks/useRoomNavigate';
-import { useSyncState } from '$hooks/useSyncState';
 import { useMessageTargetRooms } from '$hooks/useMessageTargetRooms';
 import { encryptFile } from '$utils/matrix';
 import { safeUploadFile } from '$utils/mimeTypes';
@@ -43,16 +41,8 @@ export function ShareTargetFeature() {
   const [pending, setPending] = useAtom(pendingShareAtom);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [syncing, setSyncing] = useState(() => mx.getSyncState() === SyncState.Syncing);
   // Guards against an in-flight drain resurrecting already-consumed batches.
   const consumedRef = useRef(new Set<string>());
-
-  useSyncState(
-    mx,
-    useCallback((state) => {
-      if (state === SyncState.Syncing) setSyncing(true);
-    }, [])
-  );
 
   useEffect(() => {
     if (!isMobileTauri()) return undefined;
@@ -82,6 +72,7 @@ export function ShareTargetFeature() {
         });
         if (mounted) {
           unlisten = removeListener;
+          drain();
         } else {
           removeListener();
         }
@@ -97,8 +88,10 @@ export function ShareTargetFeature() {
     void import('@tauri-apps/api/event')
       .then(({ listen }) => listen('share-received', () => drain()))
       .then((removeShareListener) => {
-        if (mounted) unlistenShareReceived = removeShareListener;
-        else removeShareListener();
+        if (mounted) {
+          unlistenShareReceived = removeShareListener;
+          drain();
+        } else removeShareListener();
       })
       .catch((err) => log.warn('Failed to listen for share events:', err));
     // Android only: covers a cold-start SEND intent beating the deep-link
@@ -207,7 +200,7 @@ export function ShareTargetFeature() {
     [shareTargets, stageIntoRoom, error, busy]
   );
 
-  if (!pending || !syncing) return null;
+  if (!pending) return null;
 
   return <SearchWrapper requestClose={handleClose} pickRoom={pickRoom} />;
 }

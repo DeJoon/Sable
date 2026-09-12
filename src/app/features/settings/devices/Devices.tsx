@@ -1,11 +1,14 @@
+import { useEffect } from 'react';
 import { Box, Text, Scroll } from 'folds';
 import { PageContent, SettingsSectionPage } from '$components/page';
 import { SequenceCard, SequenceCardStyle } from '$components/sequence-card';
 import { SettingTile } from '$components/setting-tile';
 import { useDeviceIds, useDeviceList, useSplitCurrentDevice } from '$hooks/useDeviceList';
 import { useMatrixClient } from '$hooks/useMatrixClient';
+import type { CryptoBackend } from '$types/matrix-sdk';
 import {
   useDeviceVerificationStatus,
+  useVerifiedDeviceCount,
   useUnverifiedDeviceCount,
   VerificationStatus,
 } from '$hooks/useDeviceVerificationStatus';
@@ -41,6 +44,12 @@ export function Devices({ requestBack, requestClose }: DevicesProps) {
   const crossSigningActive = useCrossSigningActive();
   const [devices, refreshDeviceList] = useDeviceList();
 
+  useEffect(() => {
+    void (crypto as CryptoBackend | undefined)?.processDeviceLists({
+      changed: [mx.getSafeUserId()],
+    });
+  }, [crypto, mx]);
+
   const [currentDevice, otherDevices] = useSplitCurrentDevice(devices);
   const verificationStatus = useDeviceVerificationStatus(
     crypto,
@@ -49,6 +58,7 @@ export function Devices({ requestBack, requestClose }: DevicesProps) {
   );
 
   const otherDevicesId = useDeviceIds(otherDevices);
+  const verifiedDeviceCount = useVerifiedDeviceCount(crypto, mx.getSafeUserId(), otherDevicesId);
   const unverifiedDeviceCount = useUnverifiedDeviceCount(
     crypto,
     mx.getSafeUserId(),
@@ -111,15 +121,13 @@ export function Devices({ requestBack, requestClose }: DevicesProps) {
                     >
                       {crypto && <DeviceKeyDetails crypto={crypto} />}
                     </DeviceTile>
-                    {crossSigningActive &&
-                      verificationStatus === VerificationStatus.Unverified &&
-                      defaultSecretStorageKeyId &&
-                      defaultSecretStorageKeyContent && (
-                        <VerifyCurrentDeviceTile
-                          secretStorageKeyId={defaultSecretStorageKeyId}
-                          secretStorageKeyContent={defaultSecretStorageKeyContent}
-                        />
-                      )}
+                    {crossSigningActive && verificationStatus === VerificationStatus.Unverified && (
+                      <VerifyCurrentDeviceTile
+                        secretStorageKeyId={defaultSecretStorageKeyId}
+                        secretStorageKeyContent={defaultSecretStorageKeyContent}
+                        hasVerifiedOtherDevice={(verifiedDeviceCount ?? 0) > 0}
+                      />
+                    )}
                     {crypto && verificationStatus === VerificationStatus.Verified && (
                       <BackupRestoreTile
                         crypto={crypto}
@@ -137,9 +145,7 @@ export function Devices({ requestBack, requestClose }: DevicesProps) {
                 <OtherDevices
                   devices={otherDevices}
                   refreshDeviceList={refreshDeviceList}
-                  showVerification={
-                    crossSigningActive && verificationStatus === VerificationStatus.Verified
-                  }
+                  showVerification={crossSigningActive}
                 />
               )}
               <LocalBackup />

@@ -21,7 +21,7 @@ use serde_json::{json, Value};
 use matrix_sdk::deserialized_responses::{DeviceLinkProblem, VerificationLevel};
 use matrix_sdk_crypto::MegolmError;
 
-use super::args::{caller_decryption_settings, decryption_settings, room_id, str_arg};
+use super::args::{caller_decryption_settings, room_id, str_arg};
 use super::requests::{mark_request_sent, outgoing_requests};
 use super::wasm_enums::processed_to_device_event_type;
 
@@ -76,7 +76,7 @@ enum ToDeviceEncryptionInfoSnapshot {
 fn processed_to_device_event_json(
     event: &ProcessedToDeviceEvent,
     verification_request: Option<Value>,
-) -> Result<Value, String> {
+) -> Option<Value> {
     let raw_event = event.as_raw().json().get();
 
     let snapshot = match event {
@@ -88,10 +88,10 @@ fn processed_to_device_event_json(
                     curve25519_public_key_base64,
                 } => curve25519_public_key_base64.as_str(),
                 _ => {
-                    return Err(
-                        "receiveSyncChanges: decrypted to-device event did not use Olm v1"
-                            .to_owned(),
-                    )
+                    log::warn!(
+                        "Dropping incoming to-device event with unrecognised encryption_info"
+                    );
+                    return None;
                 }
             };
 
@@ -132,12 +132,17 @@ fn processed_to_device_event_json(
         }
     };
 
-    let mut value = serde_json::to_value(snapshot)
-        .map_err(|e| format!("receiveSyncChanges: failed to serialize processed event: {e}"))?;
+    let mut value = match serde_json::to_value(snapshot) {
+        Ok(value) => value,
+        Err(e) => {
+            log::warn!("Dropping an incoming to-device event we could not serialize: {e}");
+            return None;
+        }
+    };
     if let Some(request) = verification_request {
         value["verificationRequest"] = request;
     }
-    Ok(value)
+    Some(value)
 }
 
 mod decryption_error_code {
@@ -270,7 +275,7 @@ pub async fn invoke(machine: &OlmMachine, method: &str, args: Value) -> Result<V
                 })
                 .unwrap_or_default();
 
-            let fallback_keys: Vec<OneTimeKeyAlgorithm> = args
+            let fallback_keys: Option<Vec<OneTimeKeyAlgorithm>> = args
                 .get("unusedFallbackKeys")
                 .and_then(Value::as_array)
                 .map(|keys| {
@@ -278,8 +283,7 @@ pub async fn invoke(machine: &OlmMachine, method: &str, args: Value) -> Result<V
                         .filter_map(Value::as_str)
                         .map(OneTimeKeyAlgorithm::from)
                         .collect()
-                })
-                .unwrap_or_default();
+                });
 
             let (processed, _room_keys) = machine
                 .receive_sync_changes(
@@ -287,27 +291,28 @@ pub async fn invoke(machine: &OlmMachine, method: &str, args: Value) -> Result<V
                         to_device_events,
                         changed_devices: &device_lists,
                         one_time_keys_counts: &key_counts,
-                        unused_fallback_keys: Some(&fallback_keys),
+                        unused_fallback_keys: fallback_keys.as_deref(),
                         next_batch_token: args
                             .get("nextBatchToken")
                             .and_then(Value::as_str)
                             .map(str::to_owned),
                     },
-                    &decryption_settings(),
+                    &caller_decryption_settings(&args),
                 )
                 .await
                 .map_err(|e| format!("receiveSyncChanges failed: {e}"))?;
 
-            processed
-                .iter()
-                .map(|event| {
-                    processed_to_device_event_json(
-                        event,
-                        verification_request_snapshot(machine, event),
-                    )
-                })
-                .collect::<Result<Vec<_>, _>>()
-                .map(Value::Array)
+            Ok(Value::Array(
+                processed
+                    .iter()
+                    .filter_map(|event| {
+                        processed_to_device_event_json(
+                            event,
+                            verification_request_snapshot(machine, event),
+                        )
+                    })
+                    .collect(),
+            ))
         }
 
         "outgoingRequests" => outgoing_requests(machine).await,

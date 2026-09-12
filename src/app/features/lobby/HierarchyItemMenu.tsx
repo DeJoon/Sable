@@ -8,7 +8,7 @@ import type { StateEvents } from '$types/matrix-sdk';
 import { AsyncStatus, useAsyncCallback } from '$hooks/useAsyncCallback';
 import { LeaveSpacePrompt } from '$components/leave-space-prompt';
 import { confirm } from '$components/confirm/confirm';
-import { showToast } from '$state/toast';
+import { showErrorToast } from '$state/toast';
 import { ResponsiveMenu } from '$components/ResponsiveMenu';
 import { useMenuAnchor } from '$hooks/useMenuAnchor';
 import { useOpenRoomSettings } from '$state/hooks/roomSettings';
@@ -239,7 +239,7 @@ export function HierarchyItemMenu({
         await mx.leave(item.roomId);
         menu.close();
       } catch (e) {
-        showToast(`Failed to leave room: ${e instanceof Error ? e.message : 'unknown error'}`);
+        showErrorToast(`Failed to leave room: ${e instanceof Error ? e.message : 'unknown error'}`);
       }
     }
   };

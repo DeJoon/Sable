@@ -6,7 +6,6 @@ import {
   IndexedDBStore,
   MatrixEventEvent,
   RoomEvent,
-  SyncState,
   EventType,
 } from '$types/matrix-sdk';
 
@@ -43,13 +42,17 @@ import {
 import * as Sentry from '@sentry/react';
 import { startClient, stopClient } from '$client/initMatrix';
 import { createSessionTokenRefresher } from '$client/oidcTokenRefresher';
-import { isDesktopTauri } from '$utils/platform';
+import { hasServiceWorker, isDesktopTauri } from '$utils/platform';
 import { isMobileOrTablet } from '$utils/platform';
+import {
+  BACKGROUND_SYNC_POLL_TIMEOUT_MS,
+  isClientReadyForNotifications,
+  waitForSync,
+} from './backgroundNotificationSync';
 
 const log = createLogger('BackgroundNotifications');
 const debugLog = createDebugLogger('BackgroundNotifications');
 
-const BACKGROUND_SYNC_POLL_TIMEOUT_MS = 60_000;
 const BACKGROUND_STAGGER_DELAY_MS = 5_000;
 
 let desktopNotificationSeq = 1;
@@ -58,9 +61,6 @@ const nextDesktopNotificationId = (): number => {
   desktopNotificationSeq = desktopNotificationSeq >= 2_000_000_000 ? 1 : desktopNotificationSeq + 1;
   return id;
 };
-
-const isClientReadyForNotifications = (state: SyncState | string | null): boolean =>
-  state === SyncState.Prepared || state === SyncState.Syncing || state === SyncState.Catchup;
 
 const startBackgroundClient = async (session: Session): Promise<MatrixClient> => {
   const storeName = {
@@ -109,34 +109,6 @@ const startBackgroundClient = async (session: Session): Promise<MatrixClient> =>
     throw error;
   }
 };
-
-/**
- * Wait for the background client to finish its initial sync so that
- * push rules and account data are available before processing events.
- * Rejects after 30 seconds so callers can handle a stalled client instead
- * of blocking indefinitely.
- */
-const waitForSync = (mx: MatrixClient): Promise<void> =>
-  new Promise((resolve, reject) => {
-    const state = mx.getSyncState();
-    if (isClientReadyForNotifications(state)) {
-      resolve();
-      return;
-    }
-    const timer: { id: ReturnType<typeof setTimeout> | undefined } = { id: undefined };
-    function onSync(newState: SyncState) {
-      if (isClientReadyForNotifications(newState)) {
-        if (timer.id !== undefined) clearTimeout(timer.id);
-        mx.removeListener(ClientEvent.Sync, onSync);
-        resolve();
-      }
-    }
-    mx.on(ClientEvent.Sync, onSync);
-    timer.id = setTimeout(() => {
-      mx.removeListener(ClientEvent.Sync, onSync);
-      reject(new Error('background client sync timed out'));
-    }, 30_000);
-  });
 
 export function BackgroundNotifications() {
   const sessions = useAtomValue(sessionsAtom);
@@ -214,6 +186,7 @@ export function BackgroundNotifications() {
 
     const { current } = clientsRef;
     let disposed = false;
+    const syncAbort = new AbortController();
     const activeIds = new Set(inactiveSessions.map((s) => s.userId));
     const retryTimers: ReturnType<typeof setTimeout>[] = [];
 
@@ -241,7 +214,7 @@ export function BackgroundNotifications() {
       // by the SW notificationclick event. This routes through HandleNotificationClick
       // (postMessage path) which does the account switch + deep link reliably on all
       // platforms including iOS where window.Notification onclick is not fired.
-      if ('serviceWorker' in navigator) {
+      if (hasServiceWorker()) {
         try {
           const reg = await navigator.serviceWorker.ready;
           await reg.showNotification(opts.title, {
@@ -257,18 +230,22 @@ export function BackgroundNotifications() {
         }
       }
       if ('Notification' in window && window.Notification.permission === 'granted') {
-        const noti = new window.Notification(opts.title, {
-          icon: opts.icon,
-          badge: opts.badge,
-          body: opts.body,
-          silent: opts.silent ?? false,
-          data: opts.data,
-        });
-        if (opts.onClick) {
-          noti.addEventListener('click', () => {
-            opts.onClick?.();
-            noti.close();
+        try {
+          const noti = new window.Notification(opts.title, {
+            icon: opts.icon,
+            badge: opts.badge,
+            body: opts.body,
+            silent: opts.silent ?? false,
+            data: opts.data,
           });
+          if (opts.onClick) {
+            noti.addEventListener('click', () => {
+              opts.onClick?.();
+              noti.close();
+            });
+          }
+        } catch (err) {
+          debugLog.error('notification', 'Failed to show a background OS notification', err);
         }
       }
     }
@@ -306,7 +283,7 @@ export function BackgroundNotifications() {
           current.set(session.userId, mx);
           Sentry.metrics.gauge('sable.background.client_count', current.size);
 
-          await waitForSync(mx);
+          await waitForSync(mx, syncAbort.signal);
 
           if (disposed) return;
           if (current.get(session.userId) !== mx) {
@@ -577,6 +554,8 @@ export function BackgroundNotifications() {
                 silent: notificationPayload.options.silent ?? undefined,
                 data: notificationPayload.options.data,
                 onClick: notifOnClick,
+              }).catch((err: unknown) => {
+                debugLog.error('notification', 'Failed to send a background OS notification', err);
               });
             }
           };
@@ -592,13 +571,7 @@ export function BackgroundNotifications() {
         .catch((err) => {
           if (disposed) return;
           log.error('failed to start background client for', session.userId, err);
-          debugLog.error('notification', 'Failed to start background client', {
-            userId: session.userId,
-            error: err,
-          });
-          Sentry.captureException(err, {
-            tags: { component: 'BackgroundNotifications' },
-          });
+          debugLog.error('notification', 'Failed to start background client', err);
 
           // Remove the stuck/failed client from current so future runs (or the
           // retry below) can attempt a fresh start.
@@ -642,6 +615,7 @@ export function BackgroundNotifications() {
     const cleanupMap = clientCleanupRef.current;
     return () => {
       disposed = true;
+      syncAbort.abort();
       staggerTimers.forEach(clearTimeout);
       retryTimers.forEach(clearTimeout);
       current.forEach((mx, userId) => {

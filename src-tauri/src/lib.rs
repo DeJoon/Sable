@@ -443,7 +443,7 @@ pub fn run() {
             desktop::tray::sync_desktop_settings_inner(app.handle())?;
 
             #[cfg(desktop)]
-            desktop::menu::register_global_shortcuts(app.handle());
+            desktop::tray::startup_register_toggle_window_shortcut(app.handle());
 
             #[cfg(desktop)]
             desktop::logging::setup(app.handle())?;
@@ -471,7 +471,7 @@ pub fn run() {
             #[cfg(feature = "matrix-crypto")]
             matrix_crypto::engine_wipe,
             #[cfg(feature = "matrix-crypto")]
-            matrix_crypto::push::engine_decrypt_push,
+            matrix_crypto::engine_store_exists,
             share_inbox::share_inbox_drain,
             share_inbox::share_inbox_read,
             share_inbox::share_inbox_clear,
@@ -507,6 +507,8 @@ pub fn run() {
             mobile_diagnostics::build_diagnostics_archive,
             #[cfg(desktop)]
             desktop::tray::get_desktop_runtime_state,
+            #[cfg(desktop)]
+            desktop::tray::set_toggle_window_shortcut,
             #[cfg(desktop)]
             desktop::tray::sync_desktop_settings,
             #[cfg(target_os = "linux")]
@@ -561,6 +563,7 @@ mod tests {
         };
         let _ = crate::desktop::runtime_state::DesktopRuntimeState {
             tray_available: true,
+            toggle_window_shortcut: None,
         };
     }
 }

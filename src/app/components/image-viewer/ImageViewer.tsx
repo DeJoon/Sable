@@ -36,7 +36,7 @@ import { useMenuAnchor } from '$hooks/useMenuAnchor';
 import { useDismissOnBack } from '$utils/androidBack';
 import { useSetting } from '$state/hooks/settings';
 import { isPixelatedRendering, settingsAtom } from '$state/settings';
-import { showToast } from '$state/toast';
+import { showErrorToast } from '$state/toast';
 import { downloadMedia } from '$utils/matrix';
 import * as css from './ImageViewer.css';
 import type { IImageInfo } from '$types/matrix/common';
@@ -91,9 +91,9 @@ export const ImageViewer = as<'div', ImageViewerProps>(
 
     useEffect(() => {
       if (!isMobile || !isAndroidTauri()) return undefined;
-      void setImmersiveMode({ enabled: true });
+      setImmersiveMode({ enabled: true }).catch(() => {});
       return () => {
-        void setImmersiveMode({ enabled: false });
+        setImmersiveMode({ enabled: false }).catch(() => {});
       };
     }, [isMobile]);
 
@@ -168,7 +168,7 @@ export const ImageViewer = as<'div', ImageViewerProps>(
       } catch (error) {
         reportDownloadFailure(error, 'fetch', downloadFilename, galleryMimeType);
         const message = error instanceof Error ? error.message : 'unknown error';
-        showToast(`Failed to save to gallery: ${message}`);
+        showErrorToast(`Failed to save to gallery: ${message}`);
       }
     };
 
@@ -183,7 +183,7 @@ export const ImageViewer = as<'div', ImageViewerProps>(
       } catch (error) {
         reportDownloadFailure(error, 'fetch', downloadFilename, galleryMimeType);
         const message = error instanceof Error ? error.message : 'unknown error';
-        showToast(`Failed to download file: ${message}`);
+        showErrorToast(`Failed to download file: ${message}`);
         return;
       }
       await saveFileToDevice(

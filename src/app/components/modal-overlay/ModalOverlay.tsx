@@ -39,6 +39,8 @@ type ModalOverlayProps = {
   background?: string;
   /** Set false for full-bleed viewers that inset their own controls. */
   respectSafeArea?: boolean;
+  /** Set false where unmounting must not count as the user dismissing the overlay. */
+  deactivateCloses?: boolean;
   children: ReactNode;
 };
 
@@ -52,8 +54,10 @@ export function ModalOverlay({
   escapeDeactivates = stopPropagation,
   background,
   respectSafeArea = true,
+  deactivateCloses = true,
   children,
 }: ModalOverlayProps) {
+  const onDeactivate = deactivateCloses ? requestClose : undefined;
   // Null outside a provider, where desktop is the safe assumption.
   const isMobile = useScreenSizeOptionally() === ScreenSize.Mobile;
   const ownedModalRef = useRef<HTMLDivElement | null>(null);
@@ -73,7 +77,7 @@ export function ModalOverlay({
             initialFocus: false,
             fallbackFocus: () => contentRef?.current ?? document.body,
             escapeDeactivates,
-            onDeactivate: requestClose,
+            onDeactivate,
           }}
         >
           <div
@@ -102,7 +106,7 @@ export function ModalOverlay({
     const focusTrapOptions: FocusTrapOptions = {
       initialFocus: false,
       fallbackFocus: () => document.body,
-      onDeactivate: requestClose,
+      onDeactivate,
       clickOutsideDeactivates: dismissOnClickOutside,
       escapeDeactivates,
     };
@@ -128,7 +132,7 @@ export function ModalOverlay({
             fallbackFocus: () =>
               (size ? ownedModalRef.current : contentRef?.current) ?? document.body,
             clickOutsideDeactivates: dismissOnClickOutside,
-            onDeactivate: requestClose,
+            onDeactivate,
             escapeDeactivates,
           }}
         >

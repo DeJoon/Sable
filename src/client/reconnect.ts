@@ -21,12 +21,15 @@ export const nudgeReconnect = (
 ): boolean => {
   if (!mx.clientRunning) return false;
 
+  const manager = getSlidingSyncManager(mx);
+  if (manager?.isPaused()) return false;
+
   const now = Date.now();
   const last = lastNudgeAt.get(mx);
   if (!opts?.force && last !== undefined && now - last < NUDGE_THROTTLE_MS) return false;
   lastNudgeAt.set(mx, now);
 
-  const slidingSync = getSlidingSyncManager(mx)?.slidingSync;
+  const slidingSync = manager?.slidingSync;
   let nudged: boolean;
   if (slidingSync) {
     slidingSync.resend();

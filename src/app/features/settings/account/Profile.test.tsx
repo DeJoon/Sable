@@ -2,11 +2,12 @@ import { act, render, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { ScreenSize, ScreenSizeProvider } from '$hooks/useScreenSize';
 import { SettingsLinkProvider } from '$features/settings/SettingsLinkContext';
-import { showToast } from '$state/toast';
+import { showErrorToast } from '$state/toast';
 import { Profile } from './Profile';
 
 vi.mock('$state/toast', () => ({
   showToast: vi.fn<(text: string) => void>(),
+  showErrorToast: vi.fn<(text: string) => void>(),
 }));
 
 const timezoneEditorMock = vi.hoisted(() => ({
@@ -150,6 +151,8 @@ describe('Profile', () => {
       timezoneEditorMock.props?.onSave('Europe/Paris');
     });
 
-    expect(showToast).toHaveBeenCalledWith(expect.stringContaining('Failed to save profile field'));
+    expect(showErrorToast).toHaveBeenCalledWith(
+      expect.stringContaining('Failed to save profile field')
+    );
   });
 });

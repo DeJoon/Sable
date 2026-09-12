@@ -73,12 +73,6 @@ function BackupKeyRecovery({
         await cryptoBackend.bootstrapCrossSigning({});
         await cryptoBackend.bootstrapSecretStorage({});
 
-        const deviceId = mx.getDeviceId();
-        if (!deviceId) {
-          throw new Error('Unexpected Error! Current device ID not found.');
-        }
-        await cryptoBackend.setDeviceVerified(mx.getSafeUserId(), deviceId);
-
         // Emits KeyBackupDecryptionKeyCached, which drives the restore.
         await crypto.loadSessionBackupPrivateKeyFromSecretStorage();
       },

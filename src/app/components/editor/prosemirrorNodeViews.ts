@@ -3,6 +3,7 @@ import { Plugin } from 'prosemirror-state';
 import type { Decoration, NodeView, NodeViewConstructor } from 'prosemirror-view';
 import { Decoration as NodeDecoration, DecorationSet } from 'prosemirror-view';
 import * as css from '$styles/CustomHtml.css';
+import { AtomLabel } from './Editor.css';
 import { BlockType } from './types';
 import type { MentionToken } from './model';
 import { formatMentionElementDisplayName } from './utils';
@@ -30,6 +31,13 @@ const mentionTokenOf = (node: ProseMirrorNode): MentionToken => ({
   name: node.attrs.name as string,
   children: [{ text: '' }],
 });
+
+/** Text lives in the attribute and a ::before pseudo-element, never the DOM. */
+const setAtomLabel = (dom: HTMLElement, className: string, label: string): void => {
+  dom.className = `${className} ${AtomLabel}`;
+  dom.setAttribute('data-label', label);
+  dom.setAttribute('aria-label', label);
+};
 
 abstract class AtomNodeView implements NodeView {
   dom: HTMLElement;
@@ -70,8 +78,11 @@ class MentionNodeView extends AtomNodeView {
 
   protected render(): void {
     const token = mentionTokenOf(this.node);
-    this.dom.className = css.Mention({ highlight: token.highlight, focus: this.selected });
-    this.dom.textContent = this.context().mentionDisplayName(token);
+    setAtomLabel(
+      this.dom,
+      css.Mention({ highlight: token.highlight, focus: this.selected }),
+      this.context().mentionDisplayName(token)
+    );
   }
 }
 
@@ -98,8 +109,11 @@ class CommandNodeView extends AtomNodeView {
   }
 
   protected render(): void {
-    this.dom.className = css.Command({ focus: this.selected, active: this.active });
-    this.dom.textContent = `/${this.node.attrs.command as string}`;
+    setAtomLabel(
+      this.dom,
+      css.Command({ focus: this.selected, active: this.active }),
+      `/${this.node.attrs.command as string}`
+    );
   }
 }
 
@@ -166,7 +180,7 @@ class EmoticonNodeView extends AtomNodeView {
       img.alt = shortcode;
       inner.append(img);
     } else {
-      inner.textContent = key.startsWith('mxc://') ? `:${shortcode}:` : key;
+      setAtomLabel(inner, inner.className, key.startsWith('mxc://') ? `:${shortcode}:` : key);
     }
 
     this.dom.replaceChildren(inner);

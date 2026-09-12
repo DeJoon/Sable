@@ -3,6 +3,7 @@ import { onlineManager } from '@tanstack/react-query';
 import { TauriEvent, listen } from '@tauri-apps/api/event';
 import { isTauri } from '@tauri-apps/api/core';
 import type { MatrixClient } from '$types/matrix-sdk';
+import { SyncState } from '$types/matrix-sdk';
 import type { NudgeReason } from '$client/reconnect';
 import { abortClassicSyncPoll, nudgeReconnect } from '$client/reconnect';
 import { useSyncState } from './useSyncState';
@@ -19,6 +20,7 @@ const WEDGED_NUDGE_ATTEMPTS = 3;
 
 export const useNetworkRecovery = (mx: MatrixClient | undefined): void => {
   const lastSyncAtRef = useRef(Date.now());
+  const syncStateRef = useRef<SyncState | null>(null);
   const verifyTimerRef = useRef<number | undefined>(undefined);
   const deadNudgesRef = useRef(0);
 
@@ -39,11 +41,15 @@ export const useNetworkRecovery = (mx: MatrixClient | undefined): void => {
 
   useSyncState(
     mx,
-    useCallback(() => {
-      lastSyncAtRef.current = Date.now();
-      deadNudgesRef.current = 0;
-      cancelVerify();
-    }, [cancelVerify])
+    useCallback(
+      (current) => {
+        syncStateRef.current = current;
+        lastSyncAtRef.current = Date.now();
+        deadNudgesRef.current = 0;
+        cancelVerify();
+      },
+      [cancelVerify]
+    )
   );
 
   // Foreground nudges (resume / visible-stale / online) get one sync verification:
@@ -70,11 +76,11 @@ export const useNetworkRecovery = (mx: MatrixClient | undefined): void => {
 
     const onOnline = () => nudgeForeground('online');
     const onVisible = () => {
-      if (
-        document.visibilityState === 'visible' &&
-        Date.now() - lastSyncAtRef.current >= VISIBLE_STALE_MS
-      ) {
-        nudgeForeground('visible');
+      if (document.visibilityState !== 'visible') return;
+      const degraded =
+        syncStateRef.current === SyncState.Error || syncStateRef.current === SyncState.Reconnecting;
+      if (degraded || Date.now() - lastSyncAtRef.current >= VISIBLE_STALE_MS) {
+        nudgeForeground('visible', degraded ? { force: true } : undefined);
       }
     };
 

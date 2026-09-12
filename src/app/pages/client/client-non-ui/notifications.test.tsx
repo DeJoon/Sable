@@ -44,7 +44,10 @@ const notificationUtils = vi.hoisted(() => ({
   markAsRead: vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
 }));
 
-const toast = vi.hoisted(() => ({ showToast: vi.fn<(message: string) => void>() }));
+const toast = vi.hoisted(() => ({
+  showToast: vi.fn<(message: string) => void>(),
+  showErrorToast: vi.fn<(message: string) => void>(),
+}));
 
 const getTauriNotificationsApi = vi.hoisted(() =>
   vi.fn<() => Promise<typeof notificationsApi>>().mockResolvedValue(notificationsApi)
@@ -189,7 +192,7 @@ describe('NativeNotificationActionRouting', () => {
     await waitFor(() => expect(matrixClient.sendMessage).toHaveBeenCalledOnce());
     await waitFor(() => expect(store.get(nativeNotificationRepliesAtom)).toEqual([]));
     expect(notificationUtils.markAsRead).toHaveBeenCalledOnce();
-    expect(toast.showToast).not.toHaveBeenCalled();
+    expect(toast.showErrorToast).not.toHaveBeenCalled();
   });
 });
 

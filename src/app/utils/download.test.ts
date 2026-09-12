@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import FileSaver from 'file-saver';
 import { invoke, isTauri } from '@tauri-apps/api/core';
 import { type as osType } from '@tauri-apps/plugin-os';
-import { showToast } from '$state/toast';
+import { showErrorToast, showToast } from '$state/toast';
 import { setMediaEncryption } from '$utils/tauriMediaEncryption';
 import {
   downloadJsonFile,
@@ -29,6 +29,7 @@ const mocks = vi.hoisted(() => ({
   isTauri: vi.fn<() => boolean>(),
   osType: vi.fn<() => string>(),
   showToast: vi.fn<(text: string, durationMs?: number) => void>(),
+  showErrorToast: vi.fn<(text: string, durationMs?: number) => void>(),
   fetchMediaBlob: vi.fn<(input: string) => Promise<Blob>>(),
   captureException: vi.fn<(error: unknown, context?: unknown) => void>(),
   setMediaEncryption: vi.fn<() => Promise<boolean>>(),
@@ -42,7 +43,10 @@ vi.mock('@tauri-apps/api/core', () => ({
 }));
 vi.mock('@tauri-apps/plugin-os', () => ({ type: mocks.osType }));
 vi.mock('@sentry/react', () => ({ captureException: mocks.captureException }));
-vi.mock('$state/toast', () => ({ showToast: mocks.showToast }));
+vi.mock('$state/toast', () => ({
+  showToast: mocks.showToast,
+  showErrorToast: mocks.showErrorToast,
+}));
 vi.mock('$utils/mediaTransport', () => ({ fetchMediaBlob: mocks.fetchMediaBlob }));
 vi.mock('$utils/tauriMediaEncryption', () => ({ setMediaEncryption: mocks.setMediaEncryption }));
 vi.mock('tauri-plugin-android-fs-api', () => ({
@@ -147,7 +151,7 @@ describe('saveFileToDevice', () => {
 
     expect(result).toBe('failed');
     expect(androidFs.removeFile).toHaveBeenCalledWith('content://download/file');
-    expect(showToast).toHaveBeenCalledWith('Failed to save file: write failed');
+    expect(showErrorToast).toHaveBeenCalledWith('Failed to save file: write failed');
   });
 
   it('does not write or toast when the iOS save picker is cancelled', async () => {
@@ -159,6 +163,7 @@ describe('saveFileToDevice', () => {
     expect(save).toHaveBeenCalledWith({ defaultPath: 'file.txt' });
     expect(writeFile).not.toHaveBeenCalled();
     expect(showToast).not.toHaveBeenCalled();
+    expect(showErrorToast).not.toHaveBeenCalled();
   });
 
   it('writes the selected iOS path and shows the success toast', async () => {
@@ -305,7 +310,7 @@ describe('saveMediaToGallery', () => {
 
     expect(androidFs.createNewPublicImageFile).not.toHaveBeenCalled();
     expect(androidFs.writeFile).not.toHaveBeenCalled();
-    expect(showToast).toHaveBeenCalledWith(
+    expect(showErrorToast).toHaveBeenCalledWith(
       'Failed to save to gallery: Storage permission was denied'
     );
   });
@@ -317,7 +322,7 @@ describe('saveMediaToGallery', () => {
 
     expect(androidFs.writeFile).not.toHaveBeenCalled();
     expect(androidFs.removeFile).not.toHaveBeenCalled();
-    expect(showToast).toHaveBeenCalledWith('Failed to save to gallery: create failed');
+    expect(showErrorToast).toHaveBeenCalledWith('Failed to save to gallery: create failed');
   });
 
   it('rejects video media explicitly without touching any backend or falling back', async () => {
@@ -328,6 +333,7 @@ describe('saveMediaToGallery', () => {
     expect(androidFs.createNewPublicImageFile).not.toHaveBeenCalled();
     expect(invoke).not.toHaveBeenCalled();
     expect(showToast).not.toHaveBeenCalled();
+    expect(showErrorToast).not.toHaveBeenCalled();
     expect(FileSaver.saveAs).not.toHaveBeenCalled();
   });
 
@@ -337,7 +343,7 @@ describe('saveMediaToGallery', () => {
     await saveMediaToGallery(new Blob(['data']), 'photo.png', 'image/png');
 
     expect(androidFs.removeFile).toHaveBeenCalledWith('content://media/image');
-    expect(showToast).toHaveBeenCalledWith('Failed to save to gallery: write failed');
+    expect(showErrorToast).toHaveBeenCalledWith('Failed to save to gallery: write failed');
     expect(invoke).not.toHaveBeenCalled();
     expect(FileSaver.saveAs).not.toHaveBeenCalled();
   });
@@ -351,7 +357,7 @@ describe('saveMediaToGallery', () => {
     await saveMediaToGallery(new Blob(['data']), 'photo.png', 'image/png');
 
     expect(androidFs.removeFile).toHaveBeenCalledWith('content://media/image');
-    expect(showToast).toHaveBeenCalledWith(`Failed to save to gallery: ${error.message}`);
+    expect(showErrorToast).toHaveBeenCalledWith(`Failed to save to gallery: ${error.message}`);
   });
 
   it('sends media bytes to the native Photos command on iOS', async () => {
@@ -394,7 +400,7 @@ describe('saveMediaToGallery', () => {
 
     await saveMediaToGallery(new Blob(['data']), 'photo.png', 'image/png');
 
-    expect(showToast).toHaveBeenCalledWith('Failed to save to photos: photos unavailable');
+    expect(showErrorToast).toHaveBeenCalledWith('Failed to save to photos: photos unavailable');
   });
 
   it('rejects non-media types without touching any backend', async () => {
@@ -405,6 +411,7 @@ describe('saveMediaToGallery', () => {
     expect(androidFs.createNewPublicImageFile).not.toHaveBeenCalled();
     expect(invoke).not.toHaveBeenCalled();
     expect(showToast).not.toHaveBeenCalled();
+    expect(showErrorToast).not.toHaveBeenCalled();
   });
 
   it('rejects on desktop platforms and in the browser instead of falling back', async () => {
@@ -427,8 +434,8 @@ describe('saveMediaToGallery', () => {
 
     await saveMediaToGallery('mxc://example/photo.png', 'photo.png', 'image/png');
 
-    expect(showToast).toHaveBeenCalledTimes(1);
-    expect(showToast).toHaveBeenCalledWith('Failed to save to gallery: network down');
+    expect(showErrorToast).toHaveBeenCalledTimes(1);
+    expect(showErrorToast).toHaveBeenCalledWith('Failed to save to gallery: network down');
     expect(androidFs.createNewPublicImageFile).not.toHaveBeenCalled();
     expect(androidFs.removeFile).not.toHaveBeenCalled();
     expect(invoke).not.toHaveBeenCalled();
@@ -440,7 +447,7 @@ describe('saveMediaToGallery', () => {
 
     await saveMediaToGallery('mxc://example/missing.png', 'missing.png', 'image/png');
 
-    expect(showToast).toHaveBeenCalledWith(
+    expect(showErrorToast).toHaveBeenCalledWith(
       'Failed to save to gallery: Failed to fetch media: 404 Not Found'
     );
     expect(androidFs.createNewPublicImageFile).not.toHaveBeenCalled();
@@ -454,8 +461,8 @@ describe('saveMediaToGallery', () => {
 
     await saveMediaToGallery('mxc://example/photo.png', 'photo.png', 'image/png');
 
-    expect(showToast).toHaveBeenCalledTimes(1);
-    expect(showToast).toHaveBeenCalledWith('Failed to save to photos: decode failed');
+    expect(showErrorToast).toHaveBeenCalledTimes(1);
+    expect(showErrorToast).toHaveBeenCalledWith('Failed to save to photos: decode failed');
     expect(invoke).not.toHaveBeenCalled();
     expect(FileSaver.saveAs).not.toHaveBeenCalled();
   });
@@ -531,6 +538,7 @@ describe('saveMediaToDevice', () => {
 
     await expect(saveMediaToDevice(options())).resolves.toBe('cancelled');
     expect(mocks.showToast).not.toHaveBeenCalled();
+    expect(mocks.showErrorToast).not.toHaveBeenCalled();
   });
 
   it('keeps Android on the public Downloads directory instead of the desktop command', async () => {
@@ -553,7 +561,7 @@ describe('saveMediaToDevice', () => {
     await expect(saveMediaToDevice(opts)).resolves.toBe('failed');
 
     expect(mocks.captureException).toHaveBeenCalledOnce();
-    expect(mocks.showToast).toHaveBeenCalledExactlyOnceWith('Failed to save file: offline');
+    expect(mocks.showErrorToast).toHaveBeenCalledExactlyOnceWith('Failed to save file: offline');
     expect(FileSaver.saveAs).not.toHaveBeenCalled();
   });
 });

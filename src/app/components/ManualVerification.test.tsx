@@ -11,7 +11,6 @@ const storePrivateKey = vi.hoisted(() => vi.fn<() => void>());
 const processDeviceLists = vi.hoisted(() => vi.fn<() => Promise<void>>());
 const bootstrapCrossSigning = vi.hoisted(() => vi.fn<() => Promise<void>>());
 const bootstrapSecretStorage = vi.hoisted(() => vi.fn<() => Promise<void>>());
-const setDeviceVerified = vi.hoisted(() => vi.fn<() => Promise<void>>());
 const loadSessionBackupPrivateKeyFromSecretStorage = vi.hoisted(() => vi.fn<() => Promise<void>>());
 
 vi.mock('$types/matrix-sdk', () => ({ decodeRecoveryKey }));
@@ -26,7 +25,6 @@ vi.mock('$hooks/useMatrixClient', () => ({
         processDeviceLists,
         bootstrapCrossSigning,
         bootstrapSecretStorage,
-        setDeviceVerified,
         loadSessionBackupPrivateKeyFromSecretStorage,
       }) as unknown as CryptoApi,
   }),
@@ -59,7 +57,6 @@ describe('ManualVerificationTile', () => {
     processDeviceLists.mockResolvedValue(undefined);
     bootstrapCrossSigning.mockResolvedValue(undefined);
     bootstrapSecretStorage.mockResolvedValue(undefined);
-    setDeviceVerified.mockResolvedValue(undefined);
     loadSessionBackupPrivateKeyFromSecretStorage.mockResolvedValue(undefined);
   });
 
@@ -72,8 +69,9 @@ describe('ManualVerificationTile', () => {
     expect(storePrivateKey).toHaveBeenCalledWith(KEY_ID, recoveryKey);
     expect(processDeviceLists).toHaveBeenCalledWith({ changed: ['@me:example.org'] });
     expect(bootstrapCrossSigning).toHaveBeenCalledAfter(processDeviceLists);
-    expect(setDeviceVerified).toHaveBeenCalledWith('@me:example.org', 'DEVICE');
-    expect(setDeviceVerified).toHaveBeenCalledAfter(bootstrapCrossSigning);
+    expect(loadSessionBackupPrivateKeyFromSecretStorage).toHaveBeenCalledAfter(
+      bootstrapCrossSigning
+    );
   });
 
   it('invalidates the cached verification status after bootstrapping', async () => {

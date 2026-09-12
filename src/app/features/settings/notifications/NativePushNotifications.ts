@@ -1,3 +1,4 @@
+import { iosApp } from '$utils/platform';
 import type { IPusherRequest, MatrixClient } from '$types/matrix-sdk';
 import type { ClientConfig } from '$hooks/useClientConfig';
 import { MATRIX_UNSTABLE_MSC4174_WEBPUSH_PUSHER_KIND } from '$unstable/prefixes';
@@ -50,9 +51,10 @@ function clearStoredNativePushRegistration(): void {
 }
 
 function getNativePushAppId(clientConfig: ClientConfig): string {
-  const appId = clientConfig.pushNotificationDetails?.nativePushAppID;
+  const field = iosApp() ? 'iosPushAppID' : 'nativePushAppID';
+  const appId = clientConfig.pushNotificationDetails?.[field]?.trim();
   if (!appId) {
-    throw new Error('Native push requires pushNotificationDetails.nativePushAppID in config.json.');
+    throw new Error(`Native push requires pushNotificationDetails.${field} in config.json.`);
   }
   return appId;
 }
@@ -274,6 +276,7 @@ export async function disableNativePush(
     const appIds = [
       clientConfig.pushNotificationDetails?.webPushAppID,
       clientConfig.pushNotificationDetails?.nativePushAppID,
+      clientConfig.pushNotificationDetails?.iosPushAppID,
     ].filter((appId): appId is string => Boolean(appId));
     await Promise.all(appIds.map((appId) => removeNativePushersForCurrentDevice(mx, appId)));
   }

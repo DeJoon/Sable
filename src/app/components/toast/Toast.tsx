@@ -1,7 +1,7 @@
 import { createPortal } from 'react-dom';
 import { Box, Text, color, config, toRem } from 'folds';
 
-import { Check, sizedIcon } from '$components/icons/phosphor';
+import { Check, Warning, sizedIcon } from '$components/icons/phosphor';
 import { useToastMessage } from '$state/toast';
 import { OVERLAY_LAYER_TOP } from '$components/overlay-stack';
 
@@ -12,6 +12,8 @@ type ToastProps = {
 export function Toast({ container }: ToastProps) {
   const toast = useToastMessage();
   if (!toast || !container) return null;
+
+  const isError = toast.status === 'error';
 
   return createPortal(
     <div
@@ -33,14 +35,14 @@ export function Toast({ container }: ToastProps) {
         gap="200"
         style={{
           padding: `${config.space.S200} ${config.space.S400}`,
-          backgroundColor: color.Success.Container,
-          color: color.Success.OnContainer,
+          backgroundColor: isError ? color.Critical.Container : color.Success.Container,
+          color: isError ? color.Critical.OnContainer : color.Success.OnContainer,
           borderRadius: config.radii.Pill,
           boxShadow: config.shadow.E200,
           maxWidth: '90%',
         }}
       >
-        {sizedIcon(Check, '200')}
+        {sizedIcon(isError ? Warning : Check, '200')}
         <Text size="T300" truncate>
           {toast.text}
         </Text>

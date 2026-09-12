@@ -9,9 +9,16 @@ import { type TitlebarStatusView, titlebarStatusAtom } from '$state/titlebarStat
 import { SyncConnectionStatusBanner } from '$components/SyncConnectionStatus';
 import { useDesktopSetting } from '$state/hooks/desktopSettings';
 import { hasCustomDesktopTitlebar } from '$utils/tauriTitlebar';
+import { createDebugLogger } from '$utils/debugLogger';
+
+const syncLog = createDebugLogger('sync-status');
 
 const DISCONNECTED_SHOW_DELAY_MS = 2000;
 const DISCONNECTED_HIDE_DELAY_MS = 3000;
+// Coming back from the background kills the poll; the SDK reconnects on its own well
+// inside this window, so waiting spares a banner for something already being fixed.
+const RESUME_SHOW_DELAY_MS = 8000;
+const RESUME_WINDOW_MS = 10000;
 
 type StateData = {
   current: SyncState | null;
@@ -37,7 +44,16 @@ export const useStickyDisconnected = (syncCurrent: SyncState | null): SyncState 
   const degraded =
     syncCurrent === SyncState.Reconnecting || syncCurrent === SyncState.Error ? syncCurrent : null;
   const showStartedAtRef = useRef<number | null>(null);
+  const becameVisibleAtRef = useRef(0);
   const [stickyDisconnected, setStickyDisconnected] = useState<SyncState | null>(null);
+
+  useEffect(() => {
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') becameVisibleAtRef.current = Date.now();
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => document.removeEventListener('visibilitychange', onVisibility);
+  }, []);
 
   useEffect(() => {
     if (degraded) {
@@ -49,7 +65,9 @@ export const useStickyDisconnected = (syncCurrent: SyncState | null): SyncState 
 
       const startedAt = showStartedAtRef.current ?? Date.now();
       showStartedAtRef.current = startedAt;
-      const remaining = Math.max(0, DISCONNECTED_SHOW_DELAY_MS - (Date.now() - startedAt));
+      const justResumed = startedAt - becameVisibleAtRef.current < RESUME_WINDOW_MS;
+      const showDelay = justResumed ? RESUME_SHOW_DELAY_MS : DISCONNECTED_SHOW_DELAY_MS;
+      const remaining = Math.max(0, showDelay - (Date.now() - startedAt));
       const id = setTimeout(() => {
         showStartedAtRef.current = null;
         setStickyDisconnected(degraded);
@@ -83,7 +101,7 @@ export function SyncStatus({ mx }: SyncStatusProps) {
 
   useSyncState(
     mx,
-    useCallback((current, previous) => {
+    useCallback((current, previous, data) => {
       const showConnecting = shouldShowConnecting(hasConnectedRef.current, current, previous);
       if (current === SyncState.Syncing) hasConnectedRef.current = true;
 
@@ -99,6 +117,17 @@ export function SyncStatus({ mx }: SyncStatusProps) {
       });
 
       if (current === SyncState.Reconnecting || current === SyncState.Error) {
+        const error = data?.error as
+          | { name?: string; message?: string; errcode?: string; httpStatus?: number }
+          | undefined;
+        syncLog.warn('network', 'Sync degraded', {
+          state: current,
+          previous: previous ?? 'none',
+          name: error?.name ?? 'none',
+          message: error?.message ?? 'none',
+          errcode: error?.errcode ?? 'none',
+          httpStatus: error?.httpStatus ?? -1,
+        });
         Sentry.addBreadcrumb({
           category: 'sync',
           message: `Sync state changed to ${current}`,

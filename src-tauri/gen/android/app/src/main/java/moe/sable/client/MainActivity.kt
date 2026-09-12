@@ -50,10 +50,18 @@ class MainActivity : TauriActivity() {
   private fun stageShareIntent(intent: Intent?) {
     val action = intent?.action ?: return
     if (action != Intent.ACTION_SEND && action != Intent.ACTION_SEND_MULTIPLE) return
-    require(intent != null)
+    Thread {
+      runCatching { stageShareIntentOnWorker(intent, action) }
+        .onFailure { android.util.Log.w("ShareTarget", "stage failed: ${it.message}") }
+    }.start()
+  }
 
+  private fun stageShareIntentOnWorker(intent: Intent, action: String) {
     val batchDir = File(File(dataDir, "share_inbox"), "${System.currentTimeMillis()}-${UUID.randomUUID()}")
-    batchDir.mkdirs()
+    if (!batchDir.mkdirs() && !batchDir.isDirectory) {
+      android.util.Log.w("ShareTarget", "could not create share batch directory")
+      return
+    }
     val items = JSONArray()
 
     when (action) {
@@ -83,7 +91,8 @@ class MainActivity : TauriActivity() {
         put("items", items)
       }.toString()
     )
-    nativeShareReceived()
+    runCatching { nativeShareReceived() }
+      .onFailure { android.util.Log.w("ShareTarget", "notification failed: ${it.message}") }
   }
 
   private fun addTextItem(items: JSONArray, text: String) {

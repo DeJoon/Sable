@@ -26,6 +26,7 @@ runs:
       id: setup-mise
       uses: jdx/mise-action@9e7f7633ff6f6d6048a9418a68d48f288f50eb14 # v4.2.3
       with:
+        version: '2026.9.2'
         cache: true
 
     - name: Cache Rust toolchain (workaround jdx/mise-action#215)
@@ -53,6 +54,12 @@ runs:
       run: ${INPUTS_INSTALL_COMMAND}
       env:
         INPUTS_INSTALL_COMMAND: ${{ inputs.install-command }}
+
+    - name: Disable unused Chrome APT repository
+      if: ${{ runner.os == 'Linux' && inputs.tauri == 'true' }}
+      shell: bash
+      # Chrome index sync failures must not block Tauri's system dependencies.
+      run: sudo rm -f /etc/apt/sources.list.d/google-chrome.list /etc/apt/sources.list.d/google-chrome.sources
 
     - name: Install Tauri build dependencies
       if: ${{ inputs.tauri == 'true' }}

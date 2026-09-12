@@ -39,9 +39,19 @@ pub async fn invoke(
         "importSecretsBundle" => import_secrets_bundle(machine, args).await,
 
         "pushSecretToVerifiedDevices" => push_secret(machine, args).await,
+        "requestMissingSecretsIfNeeded" => request_missing_secrets(machine).await,
 
         _ => return None,
     })
+}
+
+async fn request_missing_secrets(machine: &OlmMachine) -> Result<Value, String> {
+    let requested = machine
+        .query_missing_secrets_from_other_sessions()
+        .await
+        .map_err(|e| format!("requestMissingSecretsIfNeeded failed: {e}"))?;
+
+    Ok(Value::Bool(requested))
 }
 
 async fn bootstrap(machine: &OlmMachine, args: &Value) -> Result<Value, String> {

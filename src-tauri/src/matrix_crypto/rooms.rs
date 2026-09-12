@@ -19,17 +19,23 @@ use super::args::{room_id, str_arg};
 use super::wasm_enums::{encryption_algorithm as algorithm_to_wasm, request_type};
 
 fn user_ids(args: &Value, method: &str, field: &str) -> Result<Vec<OwnedUserId>, String> {
-    args.get(field)
+    let raw = args
+        .get(field)
         .and_then(Value::as_array)
-        .ok_or_else(|| format!("{method}: missing array argument `{field}`"))?
+        .ok_or_else(|| format!("{method}: missing array argument `{field}`"))?;
+
+    let users: Vec<OwnedUserId> = raw
         .iter()
-        .map(|id| {
-            let id = id
-                .as_str()
-                .ok_or_else(|| format!("{method}: `{field}` must contain user id strings"))?;
-            UserId::parse(id).map_err(|e| format!("{method}: bad user id `{id}` in `{field}`: {e}"))
-        })
-        .collect()
+        .filter_map(Value::as_str)
+        .filter_map(|id| UserId::parse(id).ok())
+        .collect();
+
+    let skipped = raw.len() - users.len();
+    if skipped > 0 {
+        log::warn!("{method}: skipped {skipped} unparseable ids in `{field}`");
+    }
+
+    Ok(users)
 }
 
 fn as_u64(value: &Value) -> Option<u64> {
@@ -91,8 +97,10 @@ fn collect_strategy(value: Option<&Value>, method: &str) -> Result<CollectStrate
                 Ok(CollectStrategy::OnlyTrustedDevices)
             } else if flag("errorOnVerifiedUserProblem") {
                 Ok(CollectStrategy::ErrorOnVerifiedUserProblem)
-            } else {
+            } else if flag("allDevices") {
                 Ok(CollectStrategy::AllDevices)
+            } else {
+                Err(format!("{method}: unknown sharing strategy {value:?}"))
             }
         }
         Some(_) => Err(format!(
@@ -262,15 +270,18 @@ pub async fn invoke(
                 .get_missing_sessions(users.iter().map(AsRef::as_ref))
                 .await
             {
-                Ok(Some((txn_id, request))) => Ok(json!({
-                    "type": request_type::KEYS_CLAIM,
-                    "className": "KeysClaimRequest",
-                    "id": txn_id.to_string(),
-                    "body": super::requests::keys_claim_body(
-                        &request.timeout,
-                        &json!(request.one_time_keys),
-                    ),
-                })),
+                Ok(Some((txn_id, request))) => super::requests::keys_claim_body(
+                    &request.timeout,
+                    &json!(request.one_time_keys),
+                )
+                .map(|body| {
+                    json!({
+                        "type": request_type::KEYS_CLAIM,
+                        "className": "KeysClaimRequest",
+                        "id": txn_id.to_string(),
+                        "body": body,
+                    })
+                }),
                 Ok(None) => Ok(Value::Null),
                 Err(e) => Err(format!("getMissingSessions failed: {e}")),
             }
@@ -356,6 +367,7 @@ pub async fn invoke(
 
 #[cfg(test)]
 mod tests {
+    use super::user_ids;
     use serde_json::json;
 
     use matrix_sdk_crypto::CollectStrategy;
@@ -445,5 +457,22 @@ mod tests {
             std::mem::discriminant(&settings.sharing_strategy),
             std::mem::discriminant(&CollectStrategy::OnlyTrustedDevices),
         );
+    }
+
+    #[test]
+    fn an_unparseable_member_id_is_skipped_not_fatal() {
+        let args = json!({ "users": ["@good:example.org", "@bad:under_score", "not-an-id", 7] });
+
+        let users = user_ids(&args, "shareRoomKey", "users").unwrap();
+
+        assert_eq!(users.len(), 1);
+        assert_eq!(users[0].as_str(), "@good:example.org");
+    }
+
+    #[test]
+    fn a_missing_users_array_is_still_an_error() {
+        let args = json!({});
+
+        assert!(user_ids(&args, "shareRoomKey", "users").is_err());
     }
 }

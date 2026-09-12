@@ -70,6 +70,7 @@ matrix-sdk = { version = "0.18", default-features = false, features = [
 # verification, so the engine needs it for parity with the wasm backend.
 matrix-sdk-crypto = { version = "0.18", features = [
   "qrcode",
+  "automatic-room-key-forwarding",
   "experimental-push-secrets",
 ], optional = true }
 # `bundled` compiles SQLite from source. Android's NDK ships no libsqlite3 to link
@@ -109,12 +110,12 @@ windows = { version = "0.62", features = [
 tauri-plugin-single-instance = { version = "2.4.3", features = ["deep-link"] }
 
 [target.'cfg(any(windows, target_os = "linux"))'.dependencies]
-tauri-plugin-notifications = { git = "https://github.com/SableClient/tauri-plugin-notifications.git", rev = "302944f44e0a876b39a37e4f08741379202bbdd4" }
+tauri-plugin-notifications = { git = "https://github.com/SableClient/tauri-plugin-notifications.git", rev = "658491c87be246740216f97cc367e29e31e690af" }
 
 # default-features = false drops notify-rust so macOS uses the native
 # UNUserNotificationCenter backend (needs a signed .app to deliver).
 [target.'cfg(target_os = "macos")'.dependencies]
-tauri-plugin-notifications = { git = "https://github.com/SableClient/tauri-plugin-notifications.git", rev = "302944f44e0a876b39a37e4f08741379202bbdd4", default-features = false }
+tauri-plugin-notifications = { git = "https://github.com/SableClient/tauri-plugin-notifications.git", rev = "658491c87be246740216f97cc367e29e31e690af", default-features = false }
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 tauri-plugin-updater = { version = "2", optional = true }
@@ -138,7 +139,7 @@ libloading = "0.9"
 zbus = "5"
 
 [target.'cfg(any(target_os = "android", target_os = "ios"))'.dependencies]
-tauri-plugin-notifications = { git = "https://github.com/SableClient/tauri-plugin-notifications.git", rev = "302944f44e0a876b39a37e4f08741379202bbdd4", features = [
+tauri-plugin-notifications = { git = "https://github.com/SableClient/tauri-plugin-notifications.git", rev = "658491c87be246740216f97cc367e29e31e690af", features = [
   "push-notifications",
 ] }
 tauri-plugin-edge-to-edge = { git = "https://github.com/SableClient/tauri-plugin-edge-to-edge.git", rev = "33c6116c27be28c06df5a9d02231ecc5fdeb93c5" }

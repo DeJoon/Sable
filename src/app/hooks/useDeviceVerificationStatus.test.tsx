@@ -96,7 +96,7 @@ describe('useDeviceVerificationStatus', () => {
     await waitFor(() => expect(result.current).toBe(VerificationStatus.Verified));
   });
 
-  it('reports a locally verified device as verified', async () => {
+  it('reports a merely locally verified device as unverified', async () => {
     getDeviceVerificationStatus.mockResolvedValue(
       deviceVerificationStatus({ crossSigningVerified: false, localVerified: true })
     );
@@ -105,10 +105,10 @@ describe('useDeviceVerificationStatus', () => {
       wrapper: createWrapper(),
     });
 
-    await waitFor(() => expect(result.current).toBe(VerificationStatus.Verified));
+    await waitFor(() => expect(result.current).toBe(VerificationStatus.Unverified));
   });
 
-  it('reports an owner-signed device as verified', async () => {
+  it('reports a device signed by an untrusted owner identity as unverified', async () => {
     getDeviceVerificationStatus.mockResolvedValue(
       deviceVerificationStatus({
         crossSigningVerified: false,
@@ -121,7 +121,7 @@ describe('useDeviceVerificationStatus', () => {
       wrapper: createWrapper(),
     });
 
-    await waitFor(() => expect(result.current).toBe(VerificationStatus.Verified));
+    await waitFor(() => expect(result.current).toBe(VerificationStatus.Unverified));
   });
 
   it('reports Unsupported when the device has no verification status', async () => {

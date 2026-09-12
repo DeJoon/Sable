@@ -1,7 +1,15 @@
 {
   "productName": "Sable",
   "defaultHomeserver": 0,
-  "homeserverList": ["dejoon.com", "matrix.org", "mozilla.org", "unredacted.org", "sable.moe", "kendama.moe"],
+  "homeserverList": [
+    "dejoon.com",
+    "matrix.org",
+    "mozilla.org",
+    "unredacted.org",
+    "sable.moe",
+    "kendama.moe",
+    "hopium.club"
+  ],
   "allowCustomHomeservers": true,
   "elementCallUrl": null,
 

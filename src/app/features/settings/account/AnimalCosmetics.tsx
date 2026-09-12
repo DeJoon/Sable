@@ -5,7 +5,7 @@ import type { UserProfile } from '$hooks/useUserProfile';
 import { useSetting } from '$state/hooks/settings';
 import { settingsAtom } from '$state/settings';
 import { profilesCacheAtom } from '$state/userRoomProfile';
-import { showToast } from '$state/toast';
+import { showErrorToast } from '$state/toast';
 import { invalidateUserProfileCache } from '$hooks/useUserProfile';
 import { Box, IconButton, Input, Text } from 'folds';
 import { useSetAtom } from 'jotai';
@@ -92,7 +92,7 @@ export function AnimalCosmetics({ profile, userId }: Readonly<AnimalCosmeticsPro
       try {
         await mx.setExtendedProfileProperty?.(key, value);
       } catch (error) {
-        showToast(
+        showErrorToast(
           `Failed to save profile field: ${error instanceof Error ? error.message : String(error)}`
         );
         return;

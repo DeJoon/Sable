@@ -38,6 +38,10 @@ const useVerificationRequestChange = (
 export const useVerificationRequestPhase = (request: VerificationRequest): VerificationPhase => {
   const [phase, setPhase] = useState(() => request.phase);
 
+  useEffect(() => {
+    setPhase(request.phase);
+  }, [request]);
+
   useVerificationRequestChange(
     request,
     useCallback(() => {

@@ -88,6 +88,49 @@ export async function registerUser(
   return { userId: body.user_id, accessToken: body.access_token, deviceId: body.device_id };
 }
 
+export async function loginUser(
+  baseUrl: string,
+  username: string,
+  password: string
+): Promise<RegisteredUser> {
+  const response = await fetch(`${baseUrl}/_matrix/client/v3/login`, {
+    method: 'POST',
+    body: JSON.stringify({
+      type: 'm.login.password',
+      identifier: { type: 'm.id.user', user: username },
+      password,
+    }),
+  });
+  if (!response.ok) {
+    throw new Error(`login failed: ${response.status} ${await response.text()}`);
+  }
+  const body = (await response.json()) as {
+    user_id: string;
+    access_token: string;
+    device_id: string;
+  };
+  return { userId: body.user_id, accessToken: body.access_token, deviceId: body.device_id };
+}
+
+export async function setAccountData(
+  baseUrl: string,
+  user: RegisteredUser,
+  type: string,
+  content: Record<string, unknown>
+): Promise<void> {
+  const response = await fetch(
+    `${baseUrl}/_matrix/client/v3/user/${encodeURIComponent(user.userId)}/account_data/${type}`,
+    {
+      method: 'PUT',
+      headers: { Authorization: `Bearer ${user.accessToken}` },
+      body: JSON.stringify(content),
+    }
+  );
+  if (!response.ok) {
+    throw new Error(`account data ${type} failed: ${response.status} ${await response.text()}`);
+  }
+}
+
 export async function createRoom(
   baseUrl: string,
   token: string,

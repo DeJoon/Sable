@@ -1,3 +1,5 @@
+import { isMobileTauri } from './platform';
+
 // This is probably not very accurate, but doesn't really matter I suppose
 function isDockedDevtoolsLikely(): boolean {
   const gapW = window.outerWidth - window.innerWidth;
@@ -7,6 +9,10 @@ function isDockedDevtoolsLikely(): boolean {
 }
 
 export function installConsolePasteScamWarning(): void {
+  // A phone has no docked devtools, and the soft keyboard moves the viewport far enough
+  // to look exactly like one opening.
+  if (isMobileTauri()) return;
+
   const BANNER_STYLE =
     'font-size:56px;font-weight:900;color:#ff0033;background:#1a0006;padding:16px 24px;border:6px solid #ff0033;line-height:1.1;';
   const BODY_STYLE =

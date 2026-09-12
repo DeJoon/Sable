@@ -38,7 +38,7 @@ import { NameColorEditor } from './NameColorEditor';
 import { StatusEditor } from './StatusEditor';
 import { AnimalCosmetics } from './AnimalCosmetics';
 import * as prefix from '$unstable/prefixes';
-import { showToast } from '$state/toast';
+import { showErrorToast } from '$state/toast';
 import { confirm } from '$components/confirm/confirm';
 import { AvatarUploadTile } from '$components/avatar-upload-tile/AvatarUploadTile';
 import { accessibleColor } from '$plugins/color';
@@ -158,7 +158,7 @@ function ProfileBanner({ profile, userId }: Readonly<Pick<ProfileProps, 'profile
           mxc
         );
       } catch (error) {
-        showToast(
+        showErrorToast(
           `Failed to save profile field: ${error instanceof Error ? error.message : String(error)}`
         );
         setStagedUrl(undefined);
@@ -186,7 +186,7 @@ function ProfileBanner({ profile, userId }: Readonly<Pick<ProfileProps, 'profile
           null
         );
       } catch (error) {
-        showToast(
+        showErrorToast(
           `Failed to save profile field: ${error instanceof Error ? error.message : String(error)}`
         );
         setIsRemoving(false);
@@ -432,7 +432,7 @@ function ProfileExtended({ profile, userId }: Readonly<ProfileProps>) {
       try {
         await mx.setExtendedProfileProperty?.(key, value);
       } catch (error) {
-        showToast(
+        showErrorToast(
           `Failed to save profile field: ${error instanceof Error ? error.message : String(error)}`
         );
         return;

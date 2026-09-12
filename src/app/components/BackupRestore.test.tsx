@@ -107,7 +107,6 @@ describe('BackupRestoreTile', () => {
     );
     expect(crypto.processDeviceLists).toHaveBeenCalledWith({ changed: ['@me:example.org'] });
     expect(crypto.bootstrapCrossSigning).toHaveBeenCalled();
-    expect(crypto.setDeviceVerified).toHaveBeenCalledWith('@me:example.org', 'DEVICE');
     expect(crypto.loadSessionBackupPrivateKeyFromSecretStorage).toHaveBeenCalled();
   });
 

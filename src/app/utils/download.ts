@@ -3,7 +3,7 @@ import * as Sentry from '@sentry/react';
 import { invoke, isTauri } from '@tauri-apps/api/core';
 import { type as osType } from '@tauri-apps/plugin-os';
 import type { EncryptedAttachmentInfo } from 'browser-encrypt-attachment';
-import { showToast } from '$state/toast';
+import { showErrorToast, showToast } from '$state/toast';
 import { fetchMediaBlob } from '$utils/mediaTransport';
 import { setMediaEncryption } from '$utils/tauriMediaEncryption';
 
@@ -163,7 +163,7 @@ export async function saveMediaToGallery(
       showToast('Saved to Gallery');
     } catch (error) {
       reportSaveFailure(error, 'gallery', filename, mediaMimeType);
-      showToast(`Failed to save to gallery: ${getErrorMessage(error)}`);
+      showErrorToast(`Failed to save to gallery: ${getErrorMessage(error)}`);
     }
     return;
   }
@@ -180,7 +180,7 @@ export async function saveMediaToGallery(
     showToast('Saved to Photos');
   } catch (error) {
     reportSaveFailure(error, 'photos', filename, mediaMimeType);
-    showToast(`Failed to save to photos: ${getErrorMessage(error)}`);
+    showErrorToast(`Failed to save to photos: ${getErrorMessage(error)}`);
   }
 }
 
@@ -194,7 +194,7 @@ export async function saveFileToDevice(
     blob = await resolveBlob(input);
   } catch (error) {
     reportDownloadFailure(error, 'fetch', filename, mimeType);
-    showToast(`Failed to save file: ${getErrorMessage(error)}`);
+    showErrorToast(`Failed to save file: ${getErrorMessage(error)}`);
     return 'failed';
   }
 
@@ -245,7 +245,7 @@ export async function saveFileToDevice(
       return saved ? 'saved' : 'cancelled';
     } catch (error) {
       reportSaveFailure(error, 'downloads', filename, mimeType || blob.type || undefined);
-      showToast(`Failed to save file: ${getErrorMessage(error)}`);
+      showErrorToast(`Failed to save file: ${getErrorMessage(error)}`);
       return 'failed';
     }
   }
@@ -254,7 +254,7 @@ export async function saveFileToDevice(
     FileSaver.saveAs(blob, filename);
   } catch (error) {
     reportDownloadFailure(error, 'save', filename, mimeType || blob.type || undefined);
-    showToast(`Failed to save file: ${getErrorMessage(error)}`);
+    showErrorToast(`Failed to save file: ${getErrorMessage(error)}`);
     return 'failed';
   }
   return 'saved';
@@ -283,7 +283,7 @@ export async function saveMediaToDevice({
       blob = await loadBlob();
     } catch (error) {
       reportDownloadFailure(error, 'fetch', filename, mimeType);
-      showToast(`Failed to save file: ${getErrorMessage(error)}`);
+      showErrorToast(`Failed to save file: ${getErrorMessage(error)}`);
       return 'failed';
     }
     return saveFileToDevice(blob, filename, mimeType);

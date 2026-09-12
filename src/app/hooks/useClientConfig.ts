@@ -26,8 +26,10 @@ export type ClientConfig = {
     vapidPublicKey?: string;
     webPushAppID?: string;
     nativePushAppID?: string;
+    iosPushAppID?: string;
     unifiedPushAppID?: string;
     unifiedPushGatewayUrl?: string;
+    unifiedPushEmbeddedServerUrl?: string;
   };
 
   pushTransport?: PushTransportConfig;

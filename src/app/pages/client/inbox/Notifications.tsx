@@ -24,7 +24,7 @@ import { useMatrixClient } from '$hooks/useMatrixClient';
 import { useRoomNavigate } from '$hooks/useRoomNavigate';
 import { useSetting } from '$state/hooks/settings';
 import { settingsAtom } from '$state/settings';
-import { showToast } from '$state/toast';
+import { showErrorToast } from '$state/toast';
 import { markAsRead } from '$utils/notifications';
 import { fetchNotificationEvent } from '$utils/notificationEvent';
 import { getRoomAvatarUrl } from '$utils/room/display';
@@ -186,7 +186,7 @@ function NotificationRowItem({
               onClick={() => {
                 void markAsRead(mx, room.roomId, hideReads, true)
                   .then(onMarkRead)
-                  .catch(() => showToast('Unable to mark this room as read.'));
+                  .catch(() => showErrorToast('Unable to mark this room as read.'));
               }}
               before={sizedIcon(Checks, '100')}
             >

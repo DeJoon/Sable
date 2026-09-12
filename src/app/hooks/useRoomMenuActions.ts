@@ -13,7 +13,7 @@ import { usePowerLevels } from '$hooks/usePowerLevels';
 import { markAsRead } from '$utils/notifications';
 import { copyToClipboard } from '$utils/dom';
 import { confirm } from '$components/confirm/confirm';
-import { showToast } from '$state/toast';
+import { showErrorToast } from '$state/toast';
 import { useOpenRoomSettings } from '$state/hooks/roomSettings';
 import { getMatrixToRoom } from '$plugins/matrix-to';
 import { getViaServers } from '$plugins/via-servers';
@@ -114,7 +114,7 @@ export function useRoomMenuActions(room: Room) {
       await mx.leave(room.roomId);
       return true;
     } catch (e) {
-      showToast(`Failed to leave room: ${e instanceof Error ? e.message : 'unknown error'}`);
+      showErrorToast(`Failed to leave room: ${e instanceof Error ? e.message : 'unknown error'}`);
       return false;
     }
   }, [mx, room.roomId]);

@@ -58,7 +58,7 @@ import {
 } from '$utils/notificationStyle';
 import { isMobileOrTablet } from '$utils/platform';
 import { createDebugLogger } from '$utils/debugLogger';
-import { showToast } from '$state/toast';
+import { showErrorToast } from '$state/toast';
 import {
   nativeNotificationRepliesAtom,
   nativeNotificationReplyInFlightAtom,
@@ -804,7 +804,7 @@ export function NativeNotificationActionRouting() {
         !sessionsRef.current.some((session) => session.userId === reply.userId) ||
         !enqueue(reply)
       ) {
-        showToast('Reply was not sent. Open the room to retry.');
+        showErrorToast('Reply was not sent. Open the room to retry.');
       }
     };
 
@@ -825,12 +825,12 @@ export function NativeNotificationActionRouting() {
     const expiresIn = NATIVE_REPLY_EXPIRY_MS - (Date.now() - item.createdAt);
     if (expiresIn <= 0) {
       remove(item.key);
-      showToast('Reply was not sent. Open the room to retry.');
+      showErrorToast('Reply was not sent. Open the room to retry.');
       return undefined;
     }
     const expiryTimer = setTimeout(() => {
       remove(item.key);
-      showToast('Reply was not sent. Open the room to retry.');
+      showErrorToast('Reply was not sent. Open the room to retry.');
     }, expiresIn);
     const clearExpiryTimer = () => clearTimeout(expiryTimer);
     if (mx.getUserId() !== item.userId) {
@@ -850,7 +850,7 @@ export function NativeNotificationActionRouting() {
     }
     if (room.getMyMembership() !== 'join') {
       remove(item.key);
-      showToast('Reply was not sent. Open the room to retry.');
+      showErrorToast('Reply was not sent. Open the room to retry.');
       return clearExpiryTimer;
     }
     if (inFlight.has(item.key)) return clearExpiryTimer;
@@ -864,7 +864,7 @@ export function NativeNotificationActionRouting() {
       // notification lingers while later pushes stack onto it.
       .then(() => markAsRead(mx, item.roomId, hideReads).catch(() => undefined))
       .catch(() => {
-        showToast('Reply was not sent. Open the room to retry.');
+        showErrorToast('Reply was not sent. Open the room to retry.');
       })
       .finally(() => {
         setInFlight((previous: Set<string>) => {

@@ -37,6 +37,7 @@ import {
   enablePushNotifications,
   disablePushNotifications,
 } from './PushNotifications';
+import { BatteryOptimizationSetting } from './BatteryOptimization';
 import { DeregisterAllPushersSetting } from './DeregisterPushNotifications';
 import {
   disableNativePush,
@@ -641,6 +642,12 @@ function BackgroundPushNotificationSetting() {
 
     const distributor = await ensureConfiguredUnifiedPushDistributor();
     if (!distributor) {
+      const chosen = selectedDistributor || pushTransportOverride.unifiedPushDistributor;
+      if (chosen) {
+        throw new Error(
+          'The selected UnifiedPush distributor is unavailable. Open it once, or choose another distributor.'
+        );
+      }
       return nativeFallback('UnifiedPush is not configured.');
     }
 
@@ -906,6 +913,9 @@ function BackgroundPushNotificationSetting() {
               </Text>
             )}
           </SettingTile>
+          <BatteryOptimizationSetting
+            active={upEndpoint?.distributor === EMBEDDED_WEBSOCKET_DISTRIBUTOR}
+          />
           <NotificationTransportOverrideInput
             focusId="unified-push-gateway-url"
             title="UnifiedPush Gateway URL"
